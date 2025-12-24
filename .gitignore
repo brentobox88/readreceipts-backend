@@ -1,0 +1,76 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+
+# Database
+*.db
+*.sqlite3
+
+# Uploads
+uploads/
+exports/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# CSV exports (generated files)
+*.csv
+
+# Backups
+*_backup_*.db
+
+# PowerShell scripts (generated)
+*.ps1
+
+# Python packaging
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environment
+venv/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+*.iml
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
