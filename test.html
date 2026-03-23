@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+fetch('http://localhost:8000/health')
+  .then(r => r.json())
+  .then(d => console.log(d));
+</script>
+</body>
+</html>

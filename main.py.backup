@@ -1,0 +1,488 @@
+import sys
+import os
+from pathlib import Path
+
+# Add the current directory to Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+import shutil
+from datetime import datetime
+from typing import List, Optional
+import json
+import sqlite3
+import uuid
+import csv
+import io
+
+# Import your existing OCR processor
+try:
+    from ocr_service import ReceiptOCRProcessor
+    ocr_processor = ReceiptOCRProcessor()
+    print("? OCR Processor loaded successfully")
+except ImportError as e:
+    print(f"? OCR Processor not available: {e}")
+    ocr_processor = None
+
+# Simple database setup
+def init_db():
+    conn = sqlite3.connect('receipts.db')
+    cursor = conn.cursor()
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS receipts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT,
+        file_path TEXT,
+        merchant_name TEXT,
+        total_amount REAL,
+        tax_amount REAL,
+        category TEXT,
+        business TEXT,
+        notes TEXT,
+        transaction_date TEXT,
+        ocr_text TEXT,
+        confidence_score REAL,
+        status TEXT DEFAULT 'processed',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+# Initialize database
+init_db()
+
+app = FastAPI(
+    title="Read Receipts API",
+    description="Automated receipt processing for business expenses with OCR",
+    version="2.1.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Ensure upload directory exists
+UPLOAD_DIR = "uploads/receipts"
+Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+
+EXPORTS_DIR = "exports"
+Path(EXPORTS_DIR).mkdir(parents=True, exist_ok=True)
+
+class MockReceiptProcessor:
+    """Fallback processor when OCR is not available"""
+    def process_receipt(self, image_content: bytes, filename: str):
+        if "pizza" in filename.lower():
+            return {
+                "merchant": "NORTH OF BROOKLYN PIZZERIA",
+                "total": 35.88,
+                "tax": 4.13,
+                "category": "food",
+                "business": "production",
+                "notes": "NORTH OF BROOKLYN PIZZERIA - pizza (production trip food expense)",
+                "confidence": 0.92
+            }
+        elif "lyft" in filename.lower() or "uber" in filename.lower():
+            return {
+                "merchant": "Lyft",
+                "total": 22.74,
+                "tax": 2.96,
+                "category": "transportation",
+                "business": "production",
+                "notes": "Lyft (production trip transportation)",
+                "confidence": 0.88
+            }
+        else:
+            return {
+                "merchant": "Generic Store",
+                "total": 25.50,
+                "tax": 3.32,
+                "category": "general",
+                "business": "general",
+                "notes": f"Receipt from {filename}",
+                "confidence": 0.75
+            }
+
+# Create processor instance
+processor = MockReceiptProcessor()
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Read Receipts API",
+        "version": "2.1.0",
+        "endpoints": {
+            "POST /upload": "Upload and process receipt image",
+            "GET /receipts": "Get all processed receipts",
+            "GET /receipts/{id}": "Get specific receipt",
+            "DELETE /receipts/{id}": "Delete receipt",
+            "GET /export/csv": "Export receipts as CSV",
+            "GET /health": "Health check"
+        }
+    }
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "ocr_available": ocr_processor is not None}
+
+@app.post("/upload")
+async def upload_receipt(
+    file: UploadFile = File(...), 
+    business: Optional[str] = Form("production"),
+    notes: Optional[str] = Form(None)
+):
+    """Upload and process a receipt image with real OCR"""
+    try:
+        # Validate file
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No filename provided")
+        
+        # Validate file type
+        allowed_extensions = {'.jpg', '.jpeg', '.png', '.heic', '.pdf'}
+        file_ext = os.path.splitext(file.filename.lower())[1]
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
+            )
+
+        # Save file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_filename = f"{timestamp}_{file.filename.replace(' ', '_')}"
+        filepath = os.path.join(UPLOAD_DIR, safe_filename)
+
+        with open(filepath, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+
+        # Process receipt with real OCR if available
+        receipt_data = {}
+        confidence = 0.0
+        
+        if ocr_processor:
+            try:
+                # Use real OCR
+                ocr_text, confidence = ocr_processor.extract_text(content)
+                receipt_data = ocr_processor.parse_receipt_data(ocr_text)
+                
+                # Override with provided business if specified
+                if business:
+                    receipt_data['business'] = business
+                if notes:
+                    receipt_data['notes'] = notes
+                    
+                receipt_data['ocr_text'] = ocr_text
+                receipt_data['confidence'] = confidence
+                
+            except Exception as ocr_error:
+                print(f"OCR processing failed: {ocr_error}")
+                # Fallback to mock processor
+                receipt_data = processor.process_receipt(content, file.filename)
+                receipt_data['ocr_text'] = "OCR failed, using mock data"
+                receipt_data['confidence'] = 0.5
+        else:
+            # Use mock processor
+            receipt_data = processor.process_receipt(content, file.filename)
+            receipt_data['ocr_text'] = "OCR not available, using mock data"
+            receipt_data['confidence'] = 0.5
+
+        # Save to database
+        conn = sqlite3.connect('receipts.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+        INSERT INTO receipts 
+        (filename, file_path, merchant_name, total_amount, tax_amount, category, business, notes, transaction_date, ocr_text, confidence_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            file.filename,
+            filepath,
+            receipt_data.get('merchant', 'Unknown'),
+            receipt_data.get('total', 0.0),
+            receipt_data.get('tax', 0.0),
+            receipt_data.get('category', 'general'),
+            receipt_data.get('business', business or 'general'),
+            receipt_data.get('notes', ''),
+            receipt_data.get('date', datetime.now().strftime('%Y-%m-%d')),
+            receipt_data.get('ocr_text', ''),
+            receipt_data.get('confidence', 0.0)
+        ))
+        
+        receipt_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return {
+            "success": True,
+            "message": "Receipt processed successfully",
+            "receipt_id": receipt_id,
+            "ocr_confidence": confidence,
+            "confidence_level": "high" if confidence > 0.8 else "medium" if confidence > 0.5 else "low",
+            "data": {
+                "merchant": receipt_data.get('merchant', 'Unknown'),
+                "total": f"${receipt_data.get('total', 0.0):.2f}",
+                "tax": f"${receipt_data.get('tax', 0.0):.2f}",
+                "category": receipt_data.get('category', 'general'),
+                "business": receipt_data.get('business', business or 'general'),
+                "notes": receipt_data.get('notes', ''),
+                "date": receipt_data.get('date', datetime.now().strftime('%Y-%m-%d'))
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Upload error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.get("/receipts")
+async def get_receipts(
+    business: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    limit: Optional[int] = Query(100)
+):
+    """Get all processed receipts with optional filters"""
+    try:
+        conn = sqlite3.connect('receipts.db')
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM receipts WHERE 1=1"
+        params = []
+        
+        if business:
+            query += " AND business = ?"
+            params.append(business)
+        
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        receipts = []
+        for row in rows:
+            receipts.append({
+                "id": row[0],
+                "filename": row[1],
+                "file_path": row[2],
+                "merchant": row[3],
+                "total": row[4],
+                "tax": row[5],
+                "category": row[6],
+                "business": row[7],
+                "notes": row[8],
+                "date": row[9],
+                "confidence": row[11],
+                "created_at": row[13]
+            })
+        
+        return {
+            "success": True,
+            "count": len(receipts),
+            "receipts": receipts
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/receipts/{receipt_id}")
+async def get_receipt(receipt_id: int):
+    """Get a specific receipt by ID"""
+    try:
+        conn = sqlite3.connect('receipts.db')
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM receipts WHERE id = ?", (receipt_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Receipt not found")
+        
+        return {
+            "id": row[0],
+            "filename": row[1],
+            "file_path": row[2],
+            "merchant": row[3],
+            "total": row[4],
+            "tax": row[5],
+            "category": row[6],
+            "business": row[7],
+            "notes": row[8],
+            "date": row[9],
+            "ocr_text": row[10],
+            "confidence": row[11],
+            "created_at": row[13]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.delete("/receipts/{receipt_id}")
+async def delete_receipt(receipt_id: int):
+    """Delete a receipt by ID"""
+    try:
+        conn = sqlite3.connect('receipts.db')
+        cursor = conn.cursor()
+        
+        # Check if receipt exists
+        cursor.execute("SELECT file_path FROM receipts WHERE id = ?", (receipt_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Receipt not found")
+        
+        # Delete file if it exists
+        file_path = row[0]
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        # Delete from database
+        cursor.execute("DELETE FROM receipts WHERE id = ?", (receipt_id,))
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "message": f"Receipt {receipt_id} deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/export/csv")
+async def export_receipts_csv(
+    business: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None)
+):
+    """Export receipts as CSV file"""
+    try:
+        conn = sqlite3.connect('receipts.db')
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM receipts WHERE 1=1"
+        params = []
+        
+        if business:
+            query += " AND business = ?"
+            params.append(business)
+        
+        if start_date:
+            query += " AND DATE(transaction_date) >= ?"
+            params.append(start_date)
+        
+        if end_date:
+            query += " AND DATE(transaction_date) <= ?"
+            params.append(end_date)
+        
+        query += " ORDER BY transaction_date DESC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows:
+            raise HTTPException(status_code=404, detail="No receipts found for export")
+        
+        # Create CSV content
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"receipts_export_{timestamp}.csv"
+        filepath = os.path.join(EXPORTS_DIR, filename)
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # Write headers matching your spreadsheet
+            writer.writerow(['DATE', 'CAD', 'HST', 'RMB', 'USD', 'NOTES', 'BUSINESS', 'CATEGORY'])
+            
+            for row in rows:
+                total = row[4] or 0.0
+                tax = row[5] or 0.0
+                writer.writerow([
+                    row[9] or '',  # DATE
+                    f"${total:.2f}",  # CAD
+                    f"${tax:.2f}",    # HST
+                    '',  # RMB (empty)
+                    '',  # USD (empty)
+                    row[8] or row[3],  # NOTES or merchant name
+                    (row[7] or 'GENERAL').upper(),  # BUSINESS
+                    (row[6] or 'UNCATEGORIZED').upper()  # CATEGORY
+                ])
+        
+        return FileResponse(
+            filepath,
+            media_type='text/csv',
+            filename=filename
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export error: {str(e)}")
+
+@app.get("/test/receipts")
+async def test_receipts():
+    """Create test receipts (for development)"""
+    try:
+        conn = sqlite3.connect('receipts.db')
+        cursor = conn.cursor()
+        
+        test_receipts = [
+            ("Lyft Receipt", "uploads/test/lyft.jpg", "Lyft", 22.74, 2.96, "transportation", "production", "Lyft ride to client meeting", "2024-01-15", "OCR text for Lyft", 0.88),
+            ("Pizza Receipt", "uploads/test/pizza.jpg", "NORTH OF BROOKLYN PIZZERIA", 35.88, 4.13, "food", "production", "Team lunch during production", "2024-01-15", "OCR text for pizza", 0.92),
+            ("Apple Receipt", "uploads/test/apple.jpg", "Apple", 14.68, 1.91, "software", "general", "iCloud storage subscription", "2024-01-14", "OCR text for Apple", 0.85),
+        ]
+        
+        cursor.executemany('''
+        INSERT INTO receipts 
+        (filename, file_path, merchant_name, total_amount, tax_amount, category, business, notes, transaction_date, ocr_text, confidence_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', test_receipts)
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "message": "Test receipts created successfully",
+            "count": len(test_receipts)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Test data error: {str(e)}")
+
+if __name__ == "__main__":
+    print("Starting Read Receipts API server...")
+    print(f"OCR Available: {ocr_processor is not None}")
+    print(f"Upload directory: {os.path.abspath(UPLOAD_DIR)}")
+    print(f"Database: {os.path.abspath('receipts.db')}")
+    print("API Documentation: http://localhost:8000/docs")
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        reload=True
+    )

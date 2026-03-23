@@ -1,4 +1,4 @@
-ï»¿import pytesseract
+import pytesseract
 from PIL import Image
 import io
 import re
@@ -80,7 +80,7 @@ class ReceiptOCRProcessor:
             
             # Amount patterns
             amount_patterns = [
-    r'[$]?\s*(\d+\.\d{2})',
+                r'[\$\€\£]?\s*(\d+\.\d{2})',
                 r'Total.*?(\d+\.\d{2})',
                 r'Amount.*?(\d+\.\d{2})',
                 r'Balance.*?(\d+\.\d{2})'
