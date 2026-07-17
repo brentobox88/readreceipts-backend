@@ -1,0 +1,14 @@
+﻿=== APPLE DEVELOPER ACCOUNT ===
+1. Go to: https://developer.apple.com
+2. Click 'Enroll'
+3. Choose individual or organization
+   - Individual:  USD/year
+   - Organization:  USD/year (requires D-U-N-S number)
+4. Fill in account details:
+   - Legal name (your business name)
+   - Tax information
+   - Contact information
+5. Complete Apple's identity verification
+6. Wait 24-48 hours for account activation
+
+⚠️ SAVE YOUR LOGIN CREDENTIALS IN A SECURE PLACE!

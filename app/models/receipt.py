@@ -1,55 +1,53 @@
-﻿from sqlalchemy import Column, Integer, String, Float, DateTime, Text, JSON
+﻿# app/models/receipt.py
+from sqlalchemy import Column, String, DateTime, Float, JSON, Text, Boolean, Integer
 from sqlalchemy.sql import func
 from app.database import Base
+import uuid
 
 class Receipt(Base):
     __tablename__ = "receipts"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     
-    # File info
-    filename = Column(String)
-    file_path = Column(String)
-    file_size = Column(Integer)
-    
-    # OCR extracted data
-    raw_text = Column(Text)
-    parsed_data = Column(JSON)
-    
-    # Merchant info
-    merchant_name = Column(String)
-    merchant_address = Column(String)
-    
-    # Transaction details
-    transaction_date = Column(DateTime)
-    receipt_number = Column(String)
+    # Receipt data
+    merchant_name = Column(String(255), nullable=False, default="Unknown")
+    merchant_address = Column(Text, nullable=True)
+    transaction_date = Column(DateTime, nullable=False, default=func.now())
+    receipt_number = Column(String(100), nullable=True)
     
     # Financials
-    subtotal = Column(Float)
-    tax_amount = Column(Float)
-    tax_rate = Column(Float, default=0.13)
-    tip_amount = Column(Float, default=0.0)
-    total_amount = Column(Float)
-    currency = Column(String, default="CAD")
+    subtotal = Column(Float, default=0.0)
+    tax_amount = Column(Float, default=0.0)
+    tax_rate = Column(Float, default=0.0)
+    total_amount = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(3), default="USD")
     
-    # Categorization (from your spreadsheet examples)
-    category = Column(String)  # food, transportation, software, production_supplies, travel
-    business = Column(String)  # production, design, general
-    tags = Column(JSON)  # e.g., ["production trip", "catering", "team dinner"]
+    # Metadata
+    filename = Column(String(255), nullable=True)
+    file_path = Column(String(500), nullable=True)
+    file_size = Column(Integer, default=0)
+    image_url = Column(String(500), nullable=True)
     
-    # Line items (stores items from receipt)
-    line_items = Column(JSON)
+    # OCR results
+    raw_text = Column(Text, nullable=True)
+    parsed_data = Column(JSON, nullable=True)
+    confidence_score = Column(Float, default=0.0)
     
-    # Notes (for spreadsheet export)
-    notes = Column(Text)
+    # User fields
+    business = Column(String(100), nullable=True)
+    category = Column(String(100), nullable=True)
+    tags = Column(JSON, nullable=True)
+    notes = Column(Text, nullable=True)
+    
+    # Line items stored as JSON
+    line_items = Column(JSON, nullable=True)
     
     # Status
-    status = Column(String, default="pending")  # pending, processed, reviewed, exported
-    confidence = Column(Float)
+    status = Column(String(50), default="pending")
+    manually_edited = Column(Boolean, default=False)
+    is_exported = Column(Boolean, default=False)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    processed_at = Column(DateTime(timezone=True))
-    
-    def __repr__(self):
-        return f"<Receipt {self.id}: {self.merchant_name} - >"
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    processed_at = Column(DateTime(timezone=True), nullable=True)

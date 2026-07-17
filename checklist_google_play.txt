@@ -1,0 +1,12 @@
+﻿=== GOOGLE PLAY ACCOUNT ===
+1. Go to: https://play.google.com/console
+2. Click 'Create account'
+3. Pay  USD one-time registration fee
+4. Fill in account details:
+   - Developer name (your business name)
+   - Email address
+5. Complete tax information (US requires EIN)
+6. Verify your identity (Google may require ID verification)
+7. Wait 48-72 hours for account activation
+
+⚠️ SAVE YOUR LOGIN CREDENTIALS IN A SECURE PLACE!
