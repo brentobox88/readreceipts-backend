@@ -231,5 +231,7 @@ async def upload_receipt(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
-    print("[APP] Your mobile app should use: http://10.0.0.229:8000")
+    print("[APP] Your mobile app should use: http://192.168.2.242:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
