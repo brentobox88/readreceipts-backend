@@ -10,13 +10,11 @@ from datetime import datetime
 import json
 
 # Import Document AI processor
-try:
-    from document_ai_service import document_ai_processor
-    DOC_AI_AVAILABLE = True
-    print("[OK] Document AI service loaded successfully")
-except ImportError as e:
-    print(f"[ERROR] Document AI not available: {e}")
-    DOC_AI_AVAILABLE = False
+from document_ai_service import document_ai_processor
+from document_classifier import DocumentClassifier
+
+DOC_AI_AVAILABLE = True
+classifier = DocumentClassifier()
 
 app = FastAPI(title="ReadReceipts API", version="1.0")
 
@@ -65,7 +63,9 @@ async def get_receipts():
         cursor.execute('''
         SELECT id, merchant_name, merchant_address, transaction_date, 
                total_amount, tax_amount, currency, filename, image_path,
-               created_at, confidence_score, status, category
+               created_at, confidence_score, status, category,
+               document_type, document_number, client_name, 
+               income_amount, expense_amount, tax_amount_paid
         FROM receipts
         ORDER BY created_at DESC
         ''')
@@ -87,7 +87,13 @@ async def get_receipts():
                 "created_at": row[9],
                 "confidence_score": row[10] or 0,
                 "status": row[11] or 'processed',
-                "category": row[12] or None
+                "category": row[12] or None,
+                "document_type": row[13] or 'expense',
+                "document_number": row[14] or None,
+                "client_name": row[15] or None,
+                "income_amount": row[16] or 0,
+                "expense_amount": row[17] or 0,
+                "tax_amount_paid": row[18] or 0
             })
         
         return JSONResponse(content={"receipts": receipts})
@@ -142,9 +148,6 @@ async def get_receipt_detail(receipt_id: str):
 
 @app.post("/upload")
 async def upload_receipt(file: UploadFile = File(...)):
-    if not DOC_AI_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Document AI service not available")
-    
     try:
         upload_dir = "uploads/receipts"
         os.makedirs(upload_dir, exist_ok=True)
@@ -154,6 +157,7 @@ async def upload_receipt(file: UploadFile = File(...)):
         with open(file_path, "wb") as f:
             f.write(content)
         
+        # Process with Document AI
         result = document_ai_processor.process_receipt(content)
         
         if 'error' in result:
@@ -175,6 +179,22 @@ async def upload_receipt(file: UploadFile = File(...)):
         line_items_json = json.dumps(result.get('line_items', []))
         parsed_data_json = json.dumps(result)
         
+        # Classify the document
+        raw_text = result.get('raw_text', '')
+        classification = classifier.classify_receipt(raw_text, result)
+        
+        # Determine amounts based on document type
+        if classification['document_type'] == 'invoice':
+            income_amount = total
+            expense_amount = 0
+        else:
+            income_amount = 0
+            expense_amount = total
+        
+        tax_paid = 0
+        if classification['document_type'] == 'tax':
+            tax_paid = total
+        
         conn = sqlite3.connect('receipts.db')
         cursor = conn.cursor()
         
@@ -184,8 +204,12 @@ async def upload_receipt(file: UploadFile = File(...)):
             total_amount, subtotal, tax_amount, currency,
             filename, file_path, image_path, processed_at, raw_text,
             parsed_data, confidence_score, line_items,
-            status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            document_type, document_number, client_name, client_address,
+            due_date, tax_year, tax_type, payment_method,
+            is_business, is_reimbursable,
+            income_amount, expense_amount, tax_amount_paid,
+            category, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             receipt_id,
             merchant_name,
@@ -199,10 +223,24 @@ async def upload_receipt(file: UploadFile = File(...)):
             file_path,
             file_path,
             current_time,
-            result.get('raw_text', ''),
+            raw_text,
             parsed_data_json,
             avg_confidence,
             line_items_json,
+            classification.get('document_type', 'expense'),
+            classification.get('document_number', ''),
+            classification.get('client_name', ''),
+            classification.get('client_address', ''),
+            classification.get('due_date', ''),
+            classification.get('tax_year', ''),
+            classification.get('tax_type', ''),
+            '',
+            classification.get('is_business', 1),
+            classification.get('is_reimbursable', 0),
+            income_amount,
+            expense_amount,
+            tax_paid,
+            classification.get('category', 'Uncategorized'),
             'processed',
             current_time,
             current_time
@@ -216,6 +254,7 @@ async def upload_receipt(file: UploadFile = File(...)):
             "filename": file.filename,
             "image_path": file_path,
             "data": result,
+            "classification": classification,
             "entities_found": result.get('entities_found', []),
             "line_items_count": len(result.get('line_items', []))
         })
@@ -229,9 +268,183 @@ async def upload_receipt(file: UploadFile = File(...)):
             content={"error": str(e)}
         )
 
-if __name__ == "__main__":
+@app.post("/reports/generate")
+async def generate_report(request: Request):
+    try:
+        filters = await request.json()
+        
+        conn = sqlite3.connect('receipts.db')
+        cursor = conn.cursor()
+        
+        # Build query based on filters
+        query = 'SELECT * FROM receipts WHERE 1=1'
+        params = []
+        
+        if filters.get('startDate'):
+            query += ' AND transaction_date >= ?'
+            params.append(filters['startDate'])
+        
+        if filters.get('endDate'):
+            query += ' AND transaction_date <= ?'
+            params.append(filters['endDate'])
+        
+        if filters.get('document_type') and filters['document_type'] != 'all':
+            query += ' AND document_type = ?'
+            params.append(filters['document_type'])
+        
+        if filters.get('category'):
+            query += ' AND category = ?'
+            params.append(filters['category'])
+        
+        if filters.get('minAmount'):
+            query += ' AND total_amount >= ?'
+            params.append(filters['minAmount'])
+        
+        if filters.get('maxAmount'):
+            query += ' AND total_amount <= ?'
+            params.append(filters['maxAmount'])
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        # Get column names
+        cursor.execute('PRAGMA table_info(receipts)')
+        columns = [col[1] for col in cursor.fetchall()]
+        conn.close()
+        
+        receipts = []
+        for row in rows:
+            data = dict(zip(columns, row))
+            if data.get('line_items'):
+                try:
+                    data['line_items'] = json.loads(data['line_items'])
+                except:
+                    pass
+            receipts.append(data)
+        
+        # Generate summary
+        summary = {
+            'total_receipts': len(receipts),
+            'total_income': sum(r.get('income_amount', 0) or r.get('total_amount', 0) for r in receipts if r.get('document_type') == 'invoice'),
+            'total_expenses': sum(r.get('expense_amount', 0) or r.get('total_amount', 0) for r in receipts if r.get('document_type') == 'expense'),
+            'total_tax': sum(r.get('tax_amount_paid', 0) for r in receipts if r.get('document_type') == 'tax'),
+            'net_income': sum(r.get('income_amount', 0) or r.get('total_amount', 0) for r in receipts if r.get('document_type') == 'invoice') - 
+                         sum(r.get('expense_amount', 0) or r.get('total_amount', 0) for r in receipts if r.get('document_type') == 'expense')
+        }
+        
+        # Category breakdown
+        categories = {}
+        for r in receipts:
+            cat = r.get('category') or 'Uncategorized'
+            categories[cat] = categories.get(cat, 0) + (r.get('total_amount', 0))
+        
+        # Document type breakdown
+        doc_types = {}
+        for r in receipts:
+            doc_type = r.get('document_type') or 'expense'
+            doc_types[doc_type] = doc_types.get(doc_type, 0) + 1
+        
+        return JSONResponse(content={
+            'summary': summary,
+            'breakdown': {
+                'by_category': categories,
+                'by_document_type': doc_types
+            },
+            'receipts': receipts
+        })
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+@app.get("/export")
+async def export_receipts():
+    try:
+        import io
+        import csv
+        conn = sqlite3.connect('receipts.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+        SELECT 
+            merchant_name, 
+            transaction_date, 
+            total_amount, 
+            currency,
+            document_type,
+            document_number,
+            client_name,
+            due_date,
+            tax_type,
+            tax_year,
+            income_amount,
+            expense_amount,
+            tax_amount_paid,
+            category,
+            confidence_score,
+            status
+        FROM receipts
+        ORDER BY created_at DESC
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            'Merchant', 'Date', 'Amount', 'Currency',
+            'Document Type', 'Document #', 'Client Name', 'Due Date',
+            'Tax Type', 'Tax Year', 'Income', 'Expense', 'Tax Paid',
+            'Category', 'Confidence', 'Status'
+        ])
+        
+        for row in rows:
+            writer.writerow([
+                row[0] or 'Unknown',
+                row[1] or 'N/A',
+                row[2] or 0,
+                row[3] or 'USD',
+                row[4] or 'expense',
+                row[5] or '',
+                row[6] or '',
+                row[7] or '',
+                row[8] or '',
+                row[9] or '',
+                row[10] or 0,
+                row[11] or 0,
+                row[12] or 0,
+                row[13] or 'Uncategorized',
+                f"{row[14] or 0:.0f}%",
+                row[15] or 'processed'
+            ])
+        
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=receipts_export.csv"}
+        )
+    except Exception as e:
+        print(f"Error exporting: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
-    print("[APP] Your mobile app should use: http://192.168.2.242:8000")
+    print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
+@app.route('/debug')
+def debug():
+    import os
+    return {
+        "PROJECT_ID": os.getenv("PROJECT_ID"),
+        "PROCESSOR_ID": os.getenv("PROCESSOR_ID"),
+        "GOOGLE_APPLICATION_CREDENTIALS": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+        "file_exists": os.path.exists("/etc/secrets/google-credentials.json") if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else False
+    }
