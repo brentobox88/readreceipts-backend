@@ -14,7 +14,7 @@ from document_ai_service import document_ai_processor
 # # from document_classifier import DocumentClassifier
 
 DOC_AI_AVAILABLE = True
-classifier = DocumentClassifier()
+# classifier = DocumentClassifier()
 
 app = FastAPI(title="ReadReceipts API", version="1.0")
 
@@ -448,6 +448,7 @@ def debug():
         "GOOGLE_APPLICATION_CREDENTIALS": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
         "file_exists": os.path.exists("/etc/secrets/google-credentials.json") if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else False
     }
+
 
 
 
