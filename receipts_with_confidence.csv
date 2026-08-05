@@ -1,0 +1,17 @@
+DATE,CAD,HST,RMB,USD,NOTES,BUSINESS,CATEGORY,MERCHANT,CONFIDENCE
+2024-01-15,$20.12,$2.62,,,Lyft (production trip transportation expense),PRODUCTION,TRANSPORTATION,Lyft,0.00
+2024-01-15,$31.75,$4.13,,,NORTH OF BROOKLYN PIZZERIA - pizza (production trip food expense),PRODUCTION,FOOD,NORTH OF BROOKLYN PIZZERIA,0.00
+2024-01-15,$12.99,$1.69,,,Apple - iCloud 2TB,GENERAL,SOFTWARE,Apple,0.00
+2024-01-15,$725.89,$125.33,,,United Airlines - YYZ to MNL (production trip travel expense),PRODUCTION,TRAVEL,United Airlines,0.00
+2024-01-15,$1287.00,$115.93,,,Sportchek - photoshoot prop,PRODUCTION,PRODUCTION_SUPPLIES,Sportchek,0.00
+2024-01-15,$20.12,$2.62,,,Lyft (production trip transportation expense),PRODUCTION,TRANSPORTATION,Lyft,0.00
+2024-01-15,$31.75,$4.13,,,NORTH OF BROOKLYN PIZZERIA - pizza (production trip food expense),PRODUCTION,FOOD,NORTH OF BROOKLYN PIZZERIA,0.00
+2024-01-15,$12.99,$1.69,,,Apple - iCloud 2TB,GENERAL,SOFTWARE,Apple,0.00
+2024-01-15,$725.89,$125.33,,,United Airlines - YYZ to MNL (production trip travel expense),PRODUCTION,TRAVEL,United Airlines,0.00
+2024-01-15,$1287.00,$115.93,,,Sportchek - photoshoot prop,PRODUCTION,PRODUCTION_SUPPLIES,Sportchek,0.00
+2024-01-15,$20.12,$2.62,,,Lyft (production trip transportation expense),PRODUCTION,TRANSPORTATION,Lyft,0.95
+2024-01-15,$31.75,$4.13,,,NORTH OF BROOKLYN PIZZERIA - pizza (production trip food expense),PRODUCTION,FOOD,NORTH OF BROOKLYN PIZZERIA,0.92
+2024-01-15,$12.99,$1.69,,,Apple - iCloud 2TB,GENERAL,SOFTWARE,Apple,0.88
+2024-01-15,$725.89,$125.33,,,United Airlines - YYZ to MNL (production trip travel expense),PRODUCTION,TRAVEL,United Airlines,0.85
+2024-01-15,$1287.00,$115.93,,,Sportchek - photoshoot prop,PRODUCTION,PRODUCTION_SUPPLIES,Sportchek,0.90
+2024-01-15,$43.50,$6.50,,,Generic Store - Purchase,GENERAL,UNCATEGORIZED,Generic Store,0.45
