@@ -9,12 +9,17 @@ import sqlite3
 from datetime import datetime
 import json
 
+# ============================================
+# HARDCODED VALUES - For demo deployment
+# ============================================
+PROJECT_ID = "receipt-relief"
+PROCESSOR_ID = "896553633cd26552"
+# ============================================
+
 # Import Document AI processor
 from document_ai_service import document_ai_processor
-# # from document_classifier import DocumentClassifier
 
 DOC_AI_AVAILABLE = True
-# classifier = DocumentClassifier()
 
 app = FastAPI(title="ReadReceipts API", version="1.0")
 
@@ -29,6 +34,14 @@ app.add_middleware(
 @app.get("/")
 async def root():
     return {"message": "ReadReceipts API is running", "status": "healthy"}
+
+@app.get("/debug")
+def debug():
+    return {
+        "PROJECT_ID": PROJECT_ID,
+        "PROCESSOR_ID": PROCESSOR_ID,
+        "status": "hardcoded"
+    }
 
 @app.put("/receipts/{receipt_id}")
 async def update_receipt(receipt_id: str, request: Request):
@@ -179,9 +192,18 @@ async def upload_receipt(file: UploadFile = File(...)):
         line_items_json = json.dumps(result.get('line_items', []))
         parsed_data_json = json.dumps(result)
         
-        # Classify the document
+        # Determine classification
         raw_text = result.get('raw_text', '')
-        classification = classifier.classify_receipt(raw_text, result)
+        classification = {
+            'document_type': 'expense',
+            'category': 'Uncategorized',
+            'is_business': 1,
+            'is_reimbursable': 0
+        }
+        if 'invoice' in raw_text.lower() or 'tax invoice' in raw_text.lower():
+            classification['document_type'] = 'invoice'
+        if 'tax' in raw_text.lower() or 'gst' in raw_text.lower() or 'vat' in raw_text.lower():
+            classification['document_type'] = 'tax'
         
         # Determine amounts based on document type
         if classification['document_type'] == 'invoice':
@@ -437,19 +459,3 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-@app.route('/debug')
-def debug(request):
-    import os
-    return {
-        "PROJECT_ID": os.getenv("PROJECT_ID"),
-        "PROCESSOR_ID": os.getenv("PROCESSOR_ID"),
-        "GOOGLE_APPLICATION_CREDENTIALS": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-        "file_exists": os.path.exists("/etc/secrets/google-credentials.json") if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else False
-    }
-
-
-
-
-
