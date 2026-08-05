@@ -1,9 +1,10 @@
-﻿services:
+services:
   - type: web
     name: readreceipts-api
     runtime: python
+    repo: https://github.com/brentobox88/readreceipts-backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port \
+    startCommand: uvicorn app_document_ai:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.9.0
+      - key: PORT
+        value: 10000
