@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
@@ -448,3 +448,4 @@ def debug():
         "GOOGLE_APPLICATION_CREDENTIALS": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
         "file_exists": os.path.exists("/etc/secrets/google-credentials.json") if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else False
     }
+
