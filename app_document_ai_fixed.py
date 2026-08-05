@@ -440,7 +440,7 @@ if __name__ == '__main__':
 
 
 @app.route('/debug')
-def debug():
+def debug(request):
     import os
     return {
         "PROJECT_ID": os.getenv("PROJECT_ID"),
@@ -448,6 +448,7 @@ def debug():
         "GOOGLE_APPLICATION_CREDENTIALS": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
         "file_exists": os.path.exists("/etc/secrets/google-credentials.json") if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else False
     }
+
 
 
 
