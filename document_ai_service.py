@@ -1,4 +1,4 @@
-ï»¿import os
+import os
 import re
 import json
 import sys
@@ -182,7 +182,7 @@ class DocumentAIProcessor:
         if not value:
             return None
         # Remove currency symbols and commas
-        cleaned = re.sub(r'[$,â‚¬Â£]', '', value)
+        cleaned = re.sub(r'[$,€£]', '', value)
         cleaned = cleaned.replace(',', '')
         try:
             return float(cleaned)
@@ -224,3 +224,4 @@ class DocumentAIProcessor:
 
 # Create global instance
 document_ai_processor = DocumentAIProcessor()
+
