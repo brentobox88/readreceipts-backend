@@ -1,13 +1,111 @@
-import sys
+﻿import sys
 import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+
+# ============================================
+# GUARANTEED DATABASE INITIALIZATION
+# ============================================
+import sqlite3
+conn = sqlite3.connect('receipts.db')
+cursor = conn.cursor()
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS receipts (
+    id TEXT PRIMARY KEY,
+    merchant_name TEXT,
+    merchant_address TEXT,
+    transaction_date TEXT,
+    total_amount REAL,
+    subtotal REAL,
+    tax_amount REAL,
+    currency TEXT,
+    filename TEXT,
+    file_path TEXT,
+    image_path TEXT,
+    processed_at TEXT,
+    raw_text TEXT,
+    parsed_data TEXT,
+    confidence_score REAL,
+    line_items TEXT,
+    document_type TEXT,
+    document_number TEXT,
+    client_name TEXT,
+    client_address TEXT,
+    due_date TEXT,
+    tax_year TEXT,
+    tax_type TEXT,
+    payment_method TEXT,
+    is_business INTEGER,
+    is_reimbursable INTEGER,
+    income_amount REAL,
+    expense_amount REAL,
+    tax_amount_paid REAL,
+    category TEXT,
+    status TEXT,
+    notes TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+''')
+conn.commit()
+conn.close()
+print("[DB] Database initialized successfully!")
+# ============================================
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import sqlite3
 from datetime import datetime
 import json
+
+# ============================================
+# GUARANTEED DATABASE INITIALIZATION
+# ============================================
+import sqlite3
+conn = sqlite3.connect('receipts.db')
+cursor = conn.cursor()
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS receipts (
+    id TEXT PRIMARY KEY,
+    merchant_name TEXT,
+    merchant_address TEXT,
+    transaction_date TEXT,
+    total_amount REAL,
+    subtotal REAL,
+    tax_amount REAL,
+    currency TEXT,
+    filename TEXT,
+    file_path TEXT,
+    image_path TEXT,
+    processed_at TEXT,
+    raw_text TEXT,
+    parsed_data TEXT,
+    confidence_score REAL,
+    line_items TEXT,
+    document_type TEXT,
+    document_number TEXT,
+    client_name TEXT,
+    client_address TEXT,
+    due_date TEXT,
+    tax_year TEXT,
+    tax_type TEXT,
+    payment_method TEXT,
+    is_business INTEGER,
+    is_reimbursable INTEGER,
+    income_amount REAL,
+    expense_amount REAL,
+    tax_amount_paid REAL,
+    category TEXT,
+    status TEXT,
+    notes TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+''')
+conn.commit()
+conn.close()
+print("[DB] Database initialized successfully!")
+# ============================================
 
 # ============================================
 # HARDCODED VALUES - For demo deployment
@@ -459,3 +557,4 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
