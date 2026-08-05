@@ -174,3 +174,13 @@ async def get_receipt_detail(receipt_id: int):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@app.route('/debug')
+def debug():
+    import os
+    return {
+        "PROJECT_ID": os.getenv("PROJECT_ID"),
+        "PROCESSOR_ID": os.getenv("PROCESSOR_ID"),
+        "GOOGLE_APPLICATION_CREDENTIALS": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+        "file_exists": os.path.exists("/etc/secrets/google-credentials.json") if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else False
+    }
