@@ -145,19 +145,51 @@ def debug():
 async def update_receipt(receipt_id: str, request: Request):
     try:
         data = await request.json()
-        notes = data.get('notes', '')
-        category = data.get('category', '')
+        
+        # Define all fields that can be updated
+        updateable_fields = [
+            "merchant_name", "merchant_address", "transaction_date",
+            "total_amount", "tax_amount", "currency",
+            "document_type", "document_number", "client_name",
+            "due_date", "tax_type", "tax_year",
+            "income_amount", "expense_amount", "tax_amount_paid",
+            "category", "notes", "status"
+        ]
+        
+        # Build the SET clause dynamically
+        set_clauses = []
+        values = []
+        for field in updateable_fields:
+            if field in data:
+                set_clauses.append(f"{field} = ?")
+                values.append(data[field])
+        
+        if not set_clauses:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No valid fields to update"}
+            )
+        
+        # Add updated_at timestamp
+        set_clauses.append("updated_at = ?")
+        values.append(datetime.now().isoformat())
+        values.append(receipt_id)
+        
+        query = f"UPDATE receipts SET {', '.join(set_clauses)} WHERE id = ?"
         
         conn = sqlite3.connect('receipts.db')
         cursor = conn.cursor()
-        cursor.execute(
-            'UPDATE receipts SET notes = ?, category = ?, updated_at = ? WHERE id = ?',
-            (notes, category, datetime.now().isoformat(), receipt_id)
-        )
+        cursor.execute(query, values)
         conn.commit()
         conn.close()
         
         return JSONResponse(content={"success": True, "message": "Receipt updated"})
+    except Exception as e:
+        print(f"Error updating receipt: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )(content={"success": True, "message": "Receipt updated"})
     except Exception as e:
         print(f"Error updating receipt: {str(e)}")
         return JSONResponse(
@@ -557,6 +589,7 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
