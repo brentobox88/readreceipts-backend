@@ -585,10 +585,34 @@ async def export_receipts():
             content={"error": str(e)}
         )
 
+
+@app.delete("/receipts/{receipt_id}")
+async def delete_receipt(receipt_id: str):
+    try:
+        conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM receipts WHERE id = ?', (receipt_id,))
+        if cursor.rowcount == 0:
+            conn.close()
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Receipt not found"}
+            )
+        conn.commit()
+        conn.close()
+        return JSONResponse(content={"success": True, "message": "Receipt deleted"})
+    except Exception as e:
+        print(f"Error deleting receipt: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
 if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
