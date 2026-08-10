@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, Response
 # GUARANTEED DATABASE INITIALIZATION
 # ============================================
 import sqlite3
-conn = sqlite3.connect('receipts.db')
+conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
 cursor = conn.cursor()
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS receipts (
@@ -62,7 +62,7 @@ import json
 # GUARANTEED DATABASE INITIALIZATION
 # ============================================
 import sqlite3
-conn = sqlite3.connect('receipts.db')
+conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
 cursor = conn.cursor()
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS receipts (
@@ -177,7 +177,7 @@ async def update_receipt(receipt_id: str, request: Request):
         
         query = f"UPDATE receipts SET {', '.join(set_clauses)} WHERE id = ?"
         
-        conn = sqlite3.connect('receipts.db')
+        conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
         cursor.execute(query, values)
         conn.commit()
@@ -200,7 +200,7 @@ async def update_receipt(receipt_id: str, request: Request):
 @app.get("/receipts")
 async def get_receipts():
     try:
-        conn = sqlite3.connect('receipts.db')
+        conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
         
         cursor.execute('''
@@ -252,7 +252,7 @@ async def get_receipts():
 @app.get("/receipts/{receipt_id}")
 async def get_receipt_detail(receipt_id: str):
     try:
-        conn = sqlite3.connect('receipts.db')
+        conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM receipts WHERE id = ?', (receipt_id,))
         row = cursor.fetchone()
@@ -261,7 +261,7 @@ async def get_receipt_detail(receipt_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Receipt not found")
         
-        conn = sqlite3.connect('receipts.db')
+        conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
         cursor.execute('PRAGMA table_info(receipts)')
         columns = [col[1] for col in cursor.fetchall()]
@@ -347,7 +347,7 @@ async def upload_receipt(file: UploadFile = File(...)):
         if classification['document_type'] == 'tax':
             tax_paid = total
         
-        conn = sqlite3.connect('receipts.db')
+        conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
         
         cursor.execute('''
@@ -425,7 +425,7 @@ async def generate_report(request: Request):
     try:
         filters = await request.json()
         
-        conn = sqlite3.connect('receipts.db')
+        conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
         
         # Build query based on filters
@@ -518,7 +518,7 @@ async def export_receipts():
     try:
         import io
         import csv
-        conn = sqlite3.connect('receipts.db')
+        conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
         cursor.execute('''
         SELECT 
@@ -589,6 +589,7 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
