@@ -655,3 +655,14 @@ if __name__ == '__main__':
 
 
 
+
+
+
+@app.get("/debug/images")
+async def debug_images():
+    import os
+    image_dir = "uploads/receipts"
+    if os.path.exists(image_dir):
+        files = os.listdir(image_dir)
+        return {"images": files, "count": len(files)}
+    return {"images": [], "count": 0}
