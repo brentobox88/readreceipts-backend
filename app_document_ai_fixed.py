@@ -322,18 +322,39 @@ async def upload_receipt(file: UploadFile = File(...)):
         line_items_json = json.dumps(result.get('line_items', []))
         parsed_data_json = json.dumps(result)
         
+        
+        total = result.get('total_amount', 0)
+        
+        # Check if it's a tax payment (not just a receipt with tax)
+        tax_keywords = ['gst remittance', 'hst remittance', 'tax filing', 'corporate tax', 'cra payment', 'tax payment']
+        is_tax_payment = any(keyword in raw_text.lower() for keyword in tax_keywords)
+        
         # Determine classification
+
         raw_text = result.get('raw_text', '')
-        classification = {
+                classification = {
             'document_type': 'expense',
             'category': 'Uncategorized',
             'is_business': 1,
             'is_reimbursable': 0
         }
-        if 'invoice' in raw_text.lower() or 'tax invoice' in raw_text.lower():
-            classification['document_type'] = 'invoice'
-        if 'tax' in raw_text.lower() or 'gst' in raw_text.lower() or 'vat' in raw_text.lower():
+        
+        if is_tax_payment:
             classification['document_type'] = 'tax'
+            income_amount = 0
+            expense_amount = 0
+            tax_paid = total
+        elif 'invoice' in raw_text.lower() or 'tax invoice' in raw_text.lower():
+            classification['document_type'] = 'invoice'
+            income_amount = total
+            expense_amount = 0
+            tax_paid = 0
+        else:
+            classification['document_type'] = 'expense'
+            income_amount = 0
+            expense_amount = total
+            tax_paid = 0
+
         
         # Determine amounts based on document type
         if classification['document_type'] == 'invoice':
@@ -612,6 +633,12 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+
+
+
+
 
 
 
