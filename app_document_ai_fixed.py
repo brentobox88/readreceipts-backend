@@ -2,6 +2,8 @@ import sys
 import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
+import os
 from fastapi.responses import JSONResponse, Response
 
 # ============================================
@@ -120,6 +122,12 @@ from document_ai_service import document_ai_processor
 DOC_AI_AVAILABLE = True
 
 app = FastAPI(title="ReadReceipts API", version="1.0")
+
+# Create uploads directory
+os.makedirs("uploads/receipts", exist_ok=True)
+
+# Mount static files
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -332,7 +340,7 @@ async def upload_receipt(file: UploadFile = File(...)):
         # Determine classification
 
         raw_text = result.get('raw_text', '')
-                classification = {
+            classification = {
             'document_type': 'expense',
             'category': 'Uncategorized',
             'is_business': 1,
@@ -633,6 +641,8 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
 
 
 
