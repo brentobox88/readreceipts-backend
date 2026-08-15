@@ -1,111 +1,13 @@
-import sys
+﻿import sys
 import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-
-# ============================================
-# GUARANTEED DATABASE INITIALIZATION
-# ============================================
-import sqlite3
-conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
-cursor = conn.cursor()
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS receipts (
-    id TEXT PRIMARY KEY,
-    merchant_name TEXT,
-    merchant_address TEXT,
-    transaction_date TEXT,
-    total_amount REAL,
-    subtotal REAL,
-    tax_amount REAL,
-    currency TEXT,
-    filename TEXT,
-    file_path TEXT,
-    image_path TEXT,
-    processed_at TEXT,
-    raw_text TEXT,
-    parsed_data TEXT,
-    confidence_score REAL,
-    line_items TEXT,
-    document_type TEXT,
-    document_number TEXT,
-    client_name TEXT,
-    client_address TEXT,
-    due_date TEXT,
-    tax_year TEXT,
-    tax_type TEXT,
-    payment_method TEXT,
-    is_business INTEGER,
-    is_reimbursable INTEGER,
-    income_amount REAL,
-    expense_amount REAL,
-    tax_amount_paid REAL,
-    category TEXT,
-    status TEXT,
-    notes TEXT,
-    created_at TEXT,
-    updated_at TEXT
-);
-''')
-conn.commit()
-conn.close()
-print("[DB] Database initialized successfully!")
-# ============================================
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import sqlite3
 from datetime import datetime
 import json
-
-# ============================================
-# GUARANTEED DATABASE INITIALIZATION
-# ============================================
-import sqlite3
-conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
-cursor = conn.cursor()
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS receipts (
-    id TEXT PRIMARY KEY,
-    merchant_name TEXT,
-    merchant_address TEXT,
-    transaction_date TEXT,
-    total_amount REAL,
-    subtotal REAL,
-    tax_amount REAL,
-    currency TEXT,
-    filename TEXT,
-    file_path TEXT,
-    image_path TEXT,
-    processed_at TEXT,
-    raw_text TEXT,
-    parsed_data TEXT,
-    confidence_score REAL,
-    line_items TEXT,
-    document_type TEXT,
-    document_number TEXT,
-    client_name TEXT,
-    client_address TEXT,
-    due_date TEXT,
-    tax_year TEXT,
-    tax_type TEXT,
-    payment_method TEXT,
-    is_business INTEGER,
-    is_reimbursable INTEGER,
-    income_amount REAL,
-    expense_amount REAL,
-    tax_amount_paid REAL,
-    category TEXT,
-    status TEXT,
-    notes TEXT,
-    created_at TEXT,
-    updated_at TEXT
-);
-''')
-conn.commit()
-conn.close()
-print("[DB] Database initialized successfully!")
-# ============================================
 
 # ============================================
 # HARDCODED VALUES - For demo deployment
@@ -120,6 +22,9 @@ from document_ai_service import document_ai_processor
 DOC_AI_AVAILABLE = True
 
 app = FastAPI(title="ReadReceipts API", version="1.0")
+
+# Create uploads directory if it doesn't exist
+os.makedirs("uploads/receipts", exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -141,12 +46,39 @@ def debug():
         "status": "hardcoded"
     }
 
+@app.get("/debug/images")
+async def debug_images():
+    import os
+    image_dir = "uploads/receipts"
+    if os.path.exists(image_dir):
+        files = os.listdir(image_dir)
+        return {"images": files, "count": len(files)}
+    return {"images": [], "count": 0}
+
+@app.get("/test-image")
+async def test_image():
+    import os
+    return {
+        "cwd": os.getcwd(),
+        "files": os.listdir("uploads/receipts") if os.path.exists("uploads/receipts") else []
+    }
+
+@app.get("/uploads/receipts/{filename}")
+async def serve_receipt_image(filename: str):
+    import os
+    from fastapi.responses import FileResponse
+    file_path = f"uploads/receipts/{filename}"
+    print(f"Looking for image: {file_path}")
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    print(f"Image not found: {file_path}")
+    return JSONResponse(status_code=404, content={"error": "Image not found"})
+
 @app.put("/receipts/{receipt_id}")
 async def update_receipt(receipt_id: str, request: Request):
     try:
         data = await request.json()
         
-        # Define all fields that can be updated
         updateable_fields = [
             "merchant_name", "merchant_address", "transaction_date",
             "total_amount", "tax_amount", "currency",
@@ -156,7 +88,6 @@ async def update_receipt(receipt_id: str, request: Request):
             "category", "notes", "status"
         ]
         
-        # Build the SET clause dynamically
         set_clauses = []
         values = []
         for field in updateable_fields:
@@ -170,7 +101,6 @@ async def update_receipt(receipt_id: str, request: Request):
                 content={"error": "No valid fields to update"}
             )
         
-        # Add updated_at timestamp
         set_clauses.append("updated_at = ?")
         values.append(datetime.now().isoformat())
         values.append(receipt_id)
@@ -184,12 +114,6 @@ async def update_receipt(receipt_id: str, request: Request):
         conn.close()
         
         return JSONResponse(content={"success": True, "message": "Receipt updated"})
-    except Exception as e:
-        print(f"Error updating receipt: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )(content={"success": True, "message": "Receipt updated"})
     except Exception as e:
         print(f"Error updating receipt: {str(e)}")
         return JSONResponse(
@@ -300,7 +224,6 @@ async def upload_receipt(file: UploadFile = File(...)):
         with open(file_path, "wb") as f:
             f.write(content)
         
-        # Process with Document AI
         result = document_ai_processor.process_receipt(content)
         
         if 'error' in result:
@@ -317,56 +240,56 @@ async def upload_receipt(file: UploadFile = File(...)):
         total = result.get('total_amount', 0)
         tax = result.get('total_tax_amount', 0)
         subtotal = result.get('net_amount', total - tax if tax else total)
+        currency = result.get('currency', 'USD')
         confidence_scores = result.get('confidence_scores', {})
         avg_confidence = sum(confidence_scores.values()) / len(confidence_scores) if confidence_scores else 0
         line_items_json = json.dumps(result.get('line_items', []))
         parsed_data_json = json.dumps(result)
+        raw_text = result.get('raw_text', '')
         
-        
-        total = result.get('total_amount', 0)
-        
-        # Check if it's a tax payment (not just a receipt with tax)
         tax_keywords = ['gst remittance', 'hst remittance', 'tax filing', 'corporate tax', 'cra payment', 'tax payment']
         is_tax_payment = any(keyword in raw_text.lower() for keyword in tax_keywords)
-        
-        # Determine classification
-
-        raw_text = result.get('raw_text', '')
-                classification = {
-            'document_type': 'expense',
-            'category': 'Uncategorized',
-            'is_business': 1,
-            'is_reimbursable': 0
-        }
+        is_invoice = 'invoice' in raw_text.lower() or 'tax invoice' in raw_text.lower()
         
         if is_tax_payment:
-            classification['document_type'] = 'tax'
+            document_type = 'tax'
             income_amount = 0
             expense_amount = 0
-            tax_paid = total
-        elif 'invoice' in raw_text.lower() or 'tax invoice' in raw_text.lower():
-            classification['document_type'] = 'invoice'
+            tax_amount_paid = total
+            category = 'Tax'
+        elif is_invoice:
+            document_type = 'invoice'
             income_amount = total
             expense_amount = 0
-            tax_paid = 0
+            tax_amount_paid = 0
+            category = 'Income'
         else:
-            classification['document_type'] = 'expense'
+            document_type = 'expense'
             income_amount = 0
             expense_amount = total
-            tax_paid = 0
-
+            tax_amount_paid = 0
+            category = 'Uncategorized'
+            category_keywords = ['food', 'transport', 'shopping', 'utilities', 'entertainment', 'health', 'travel']
+            for cat in category_keywords:
+                if cat in raw_text.lower():
+                    category = cat
+                    break
         
-        # Determine amounts based on document type
-        if classification['document_type'] == 'invoice':
-            income_amount = total
-            expense_amount = 0
-        else:
-            income_amount = 0
-            expense_amount = total
-        
-        tax_paid = 0
-        if classification['document_type'] == 'tax':
-            tax_paid = total
+        classification = {
+            'document_type': document_type,
+            'category': category,
+            'income_amount': income_amount,
+            'expense_amount': expense_amount,
+            'tax_amount_paid': tax_amount_paid,
+            'is_business': 1,
+            'is_reimbursable': 0,
+            'document_number': result.get('document_number', ''),
+            'client_name': result.get('client_name', ''),
+            'client_address': result.get('client_address', ''),
+            'due_date': result.get('due_date', ''),
+            'tax_year': result.get('tax_year', ''),
+            'tax_type': result.get('tax_type', '')
+        }
         
         conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
@@ -391,7 +314,7 @@ async def upload_receipt(file: UploadFile = File(...)):
             total,
             subtotal,
             tax,
-            result.get('currency', 'USD'),
+            currency,
             file.filename,
             file_path,
             file_path,
@@ -400,7 +323,7 @@ async def upload_receipt(file: UploadFile = File(...)):
             parsed_data_json,
             avg_confidence,
             line_items_json,
-            classification.get('document_type', 'expense'),
+            classification['document_type'],
             classification.get('document_number', ''),
             classification.get('client_name', ''),
             classification.get('client_address', ''),
@@ -410,10 +333,10 @@ async def upload_receipt(file: UploadFile = File(...)):
             '',
             classification.get('is_business', 1),
             classification.get('is_reimbursable', 0),
-            income_amount,
-            expense_amount,
-            tax_paid,
-            classification.get('category', 'Uncategorized'),
+            classification['income_amount'],
+            classification['expense_amount'],
+            classification['tax_amount_paid'],
+            classification['category'],
             'processed',
             current_time,
             current_time
@@ -449,7 +372,6 @@ async def generate_report(request: Request):
         conn = sqlite3.connect('/opt/render/project/src/data/receipts.db')
         cursor = conn.cursor()
         
-        # Build query based on filters
         query = 'SELECT * FROM receipts WHERE 1=1'
         params = []
         
@@ -480,7 +402,6 @@ async def generate_report(request: Request):
         cursor.execute(query, params)
         rows = cursor.fetchall()
         
-        # Get column names
         cursor.execute('PRAGMA table_info(receipts)')
         columns = [col[1] for col in cursor.fetchall()]
         conn.close()
@@ -495,7 +416,6 @@ async def generate_report(request: Request):
                     pass
             receipts.append(data)
         
-        # Generate summary
         summary = {
             'total_receipts': len(receipts),
             'total_income': sum(r.get('income_amount', 0) or r.get('total_amount', 0) for r in receipts if r.get('document_type') == 'invoice'),
@@ -505,13 +425,11 @@ async def generate_report(request: Request):
                          sum(r.get('expense_amount', 0) or r.get('total_amount', 0) for r in receipts if r.get('document_type') == 'expense')
         }
         
-        # Category breakdown
         categories = {}
         for r in receipts:
             cat = r.get('category') or 'Uncategorized'
             categories[cat] = categories.get(cat, 0) + (r.get('total_amount', 0))
         
-        # Document type breakdown
         doc_types = {}
         for r in receipts:
             doc_type = r.get('document_type') or 'expense'
@@ -606,7 +524,6 @@ async def export_receipts():
             content={"error": str(e)}
         )
 
-
 @app.delete("/receipts/{receipt_id}")
 async def delete_receipt(receipt_id: str):
     try:
@@ -629,30 +546,7 @@ async def delete_receipt(receipt_id: str):
             content={"error": str(e)}
         )
 
-@app.get("/uploads/receipts/{filename}")
-async def serve_receipt_image(filename: str):
-    import os
-    from fastapi.responses import FileResponse
-    file_path = f"uploads/receipts/{filename}"
-    print(f"Looking for image: {file_path}")
-    if os.path.exists(file_path):
-        return FileResponse(file_path)
-    print(f"Image not found: {file_path}")
-    return JSONResponse(status_code=404, content={"error": "Image not found"})
-
 if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-
-
-
-
-
-
-
-
-
-
