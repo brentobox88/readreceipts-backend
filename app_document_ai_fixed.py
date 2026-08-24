@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
@@ -221,7 +221,7 @@ async def upload_receipt(file: UploadFile = File(...)):
         
         file_path = os.path.join(upload_dir, file.filename)
         content = await file.read()
-        with open(file_path, "wb") as f:
+        with open("https://readreceipts-api-irch.onrender.com/" + file_path, "wb") as f:
             f.write(content)
         
         result = document_ai_processor.process_receipt(content)
@@ -298,7 +298,7 @@ async def upload_receipt(file: UploadFile = File(...)):
         INSERT INTO receipts (
             id, merchant_name, merchant_address, transaction_date,
             total_amount, subtotal, tax_amount, currency,
-            filename, file_path, image_path, processed_at, raw_text,
+            filename, "https://readreceipts-api-irch.onrender.com/" + file_path, image_path, processed_at, raw_text,
             parsed_data, confidence_score, line_items,
             document_type, document_number, client_name, client_address,
             due_date, tax_year, tax_type, payment_method,
@@ -316,8 +316,8 @@ async def upload_receipt(file: UploadFile = File(...)):
             tax,
             currency,
             file.filename,
-            file_path,
-            file_path,
+            "https://readreceipts-api-irch.onrender.com/" + file_path,
+            "https://readreceipts-api-irch.onrender.com/" + file_path,
             current_time,
             raw_text,
             parsed_data_json,
@@ -348,7 +348,7 @@ async def upload_receipt(file: UploadFile = File(...)):
             "success": True,
             "receipt_id": receipt_id,
             "filename": file.filename,
-            "image_path": file_path,
+            "image_path": "https://readreceipts-api-irch.onrender.com/" + "https://readreceipts-api-irch.onrender.com/" + file_path,
             "data": result,
             "classification": classification,
             "entities_found": result.get('entities_found', []),
@@ -550,3 +550,4 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
