@@ -1,9 +1,10 @@
-import sys
+﻿import sys
 import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import sqlite3
 from datetime import datetime
@@ -25,6 +26,9 @@ app = FastAPI(title="ReadReceipts API", version="1.0")
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads/receipts", exist_ok=True)
+
+# Mount static files for receipt images
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,25 +58,6 @@ async def debug_images():
         files = os.listdir(image_dir)
         return {"images": files, "count": len(files)}
     return {"images": [], "count": 0}
-
-@app.get("/test-image")
-async def test_image():
-    import os
-    return {
-        "cwd": os.getcwd(),
-        "files": os.listdir("uploads/receipts") if os.path.exists("uploads/receipts") else []
-    }
-
-@app.get("/uploads/receipts/{filename}")
-async def serve_receipt_image(filename: str):
-    import os
-    from fastapi.responses import FileResponse
-    file_path = f"uploads/receipts/{filename}"
-    print(f"Looking for image: {file_path}")
-    if os.path.exists(file_path):
-        return FileResponse(file_path)
-    print(f"Image not found: {file_path}")
-    return JSONResponse(status_code=404, content={"error": "Image not found"})
 
 @app.put("/receipts/{receipt_id}")
 async def update_receipt(receipt_id: str, request: Request):
@@ -221,7 +206,7 @@ async def upload_receipt(file: UploadFile = File(...)):
         
         file_path = os.path.join(upload_dir, file.filename)
         content = await file.read()
-        with open("https://readreceipts-api-irch.onrender.com/" + file_path, "wb") as f:
+        with open(file_path, "wb") as f:
             f.write(content)
         
         result = document_ai_processor.process_receipt(content)
@@ -298,7 +283,7 @@ async def upload_receipt(file: UploadFile = File(...)):
         INSERT INTO receipts (
             id, merchant_name, merchant_address, transaction_date,
             total_amount, subtotal, tax_amount, currency,
-            filename, "https://readreceipts-api-irch.onrender.com/" + file_path, image_path, processed_at, raw_text,
+            filename, file_path, image_path, processed_at, raw_text,
             parsed_data, confidence_score, line_items,
             document_type, document_number, client_name, client_address,
             due_date, tax_year, tax_type, payment_method,
@@ -316,8 +301,8 @@ async def upload_receipt(file: UploadFile = File(...)):
             tax,
             currency,
             file.filename,
-            "https://readreceipts-api-irch.onrender.com/" + file_path,
-            "https://readreceipts-api-irch.onrender.com/" + file_path,
+            file_path,
+            file_path,
             current_time,
             raw_text,
             parsed_data_json,
@@ -348,7 +333,7 @@ async def upload_receipt(file: UploadFile = File(...)):
             "success": True,
             "receipt_id": receipt_id,
             "filename": file.filename,
-            "image_path": "https://readreceipts-api-irch.onrender.com/" + "https://readreceipts-api-irch.onrender.com/" + file_path,
+            "image_path": file_path,
             "data": result,
             "classification": classification,
             "entities_found": result.get('entities_found', []),
@@ -550,4 +535,3 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
