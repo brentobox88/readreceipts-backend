@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
@@ -19,6 +19,21 @@ PROCESSOR_ID = "896553633cd26552"
 
 # Import Document AI processor
 from document_ai_service import document_ai_processor
+from imagetotable_client import ImageToTableClient
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Initialize ImageToTable.ai client
+IMAGETOTABLE_API_KEY = os.getenv("IMAGETOTABLE_API_KEY")
+if IMAGETOTABLE_API_KEY:
+    imagetotable_client = ImageToTableClient(IMAGETOTABLE_API_KEY)
+    print("? ImageToTable.ai client initialized")
+else:
+    print("?? IMAGETOTABLE_API_KEY not set")
+    imagetotable_client = None
 
 # Import ImageToTable.ai client
 from imagetotable_client import ImageToTableClient
@@ -32,9 +47,9 @@ load_dotenv()
 IMAGETOTABLE_API_KEY = os.getenv("IMAGETOTABLE_API_KEY")
 if IMAGETOTABLE_API_KEY:
     imagetotable_client = ImageToTableClient(IMAGETOTABLE_API_KEY)
-    print("✅ ImageToTable.ai client initialized")
+    print("? ImageToTable.ai client initialized")
 else:
-    print("⚠️ IMAGETOTABLE_API_KEY not set")
+    print("?? IMAGETOTABLE_API_KEY not set")
     imagetotable_client = None
 
 DOC_AI_AVAILABLE = True
@@ -223,9 +238,9 @@ async def upload_receipt(file: UploadFile = File(...)):
         
         file_path = os.path.join(upload_dir, file.filename)
         content = await file.read()
-        print(f"📸 File received: {file.filename}")
-        print(f"📏 Content size: {len(content)} bytes")
-        print(f"🔍 First 100 bytes: {content[:100]}")
+        print(f"?? File received: {file.filename}")
+        print(f"?? Content size: {len(content)} bytes")
+        print(f"?? First 100 bytes: {content[:100]}")
         
         with open(file_path, "wb") as f:
             f.write(content)
@@ -623,3 +638,4 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
