@@ -1,0 +1,22 @@
+﻿        classification = {
+            'document_type': 'expense',
+            'category': 'Uncategorized',
+            'is_business': 1,
+            'is_reimbursable': 0
+        }
+        
+        if is_tax_payment:
+            classification['document_type'] = 'tax'
+            income_amount = 0
+            expense_amount = 0
+            tax_paid = total
+        elif 'invoice' in raw_text.lower() or 'tax invoice' in raw_text.lower():
+            classification['document_type'] = 'invoice'
+            income_amount = total
+            expense_amount = 0
+            tax_paid = 0
+        else:
+            classification['document_type'] = 'expense'
+            income_amount = 0
+            expense_amount = total
+            tax_paid = 0

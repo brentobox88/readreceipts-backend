@@ -1,0 +1,11 @@
+﻿        # Determine amounts based on document type
+        if classification['document_type'] == 'invoice':
+            income_amount = total
+            expense_amount = 0
+        else:
+            income_amount = 0
+            expense_amount = total
+        
+        tax_paid = 0
+        if classification['document_type'] == 'tax':
+            tax_paid = total

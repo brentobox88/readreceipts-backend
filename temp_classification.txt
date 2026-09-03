@@ -1,0 +1,7 @@
+﻿        total = result.get('total_amount', 0)
+        
+        # Check if it's a tax payment (not just a receipt with tax)
+        tax_keywords = ['gst remittance', 'hst remittance', 'tax filing', 'corporate tax', 'cra payment', 'tax payment']
+        is_tax_payment = any(keyword in raw_text.lower() for keyword in tax_keywords)
+        
+        # Determine classification
