@@ -19,8 +19,64 @@ PROCESSOR_ID = "896553633cd26552"
 
 # Import Document AI processor
 from document_ai_service import document_ai_processor
+from agentic_doc import DocumentProcessor
 
 DOC_AI_AVAILABLE = True
+
+# ============================================
+# AGENTIC AI BATCH PROCESSING
+# ============================================
+def process_batch_images(image_contents: list, filenames: list) -> list:
+    """
+    Process multiple images using agentic-doc.
+    Returns a list of results for each image.
+    """
+    results = []
+    
+    try:
+        # Initialize the processor
+        processor = DocumentProcessor(
+            project_id=PROJECT_ID,
+            location="us",
+            processor_id=PROCESSOR_ID,
+        )
+        
+        # Process the batch
+        batch_results = processor.process_batch(
+            documents=image_contents,
+            mime_types=["image/jpeg"] * len(image_contents),
+            filenames=filenames,
+            timeout=300
+        )
+        
+        for i, doc_result in enumerate(batch_results):
+            try:
+                results.append({
+                    "filename": filenames[i],
+                    "success": True,
+                    "data": doc_result,
+                    "text": doc_result.get("text", ""),
+                    "confidence": doc_result.get("confidence", 0),
+                })
+            except Exception as e:
+                results.append({
+                    "filename": filenames[i],
+                    "success": False,
+                    "error": str(e)
+                })
+                
+    except Exception as e:
+        results = [
+            {
+                "filename": f,
+                "success": False,
+                "error": str(e)
+            }
+            for f in filenames
+        ]
+    
+    return results
+# ============================================
 
 app = FastAPI(title="ReadReceipts API", version="1.0")
 
@@ -346,6 +402,42 @@ async def upload_receipt(file: UploadFile = File(...)):
         
     except Exception as e:
         print(f"Error in upload: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+@app.post("/batch-upload")
+async def batch_upload_receipt(files: list[UploadFile] = File(...)):
+    """
+    Batch upload endpoint using agentic AI.
+    Processes multiple images in a single request.
+    """
+    try:
+        # Read all files into memory
+        image_contents = []
+        filenames = []
+        
+        for file in files:
+            content = await file.read()
+            image_contents.append(content)
+            filenames.append(file.filename)
+        
+        # Process using agentic-doc
+        results = process_batch_images(image_contents, filenames)
+        
+        return JSONResponse(content={
+            "success": True,
+            "total": len(files),
+            "results": results,
+            "success_count": sum(1 for r in results if r.get("success", False)),
+            "fail_count": sum(1 for r in results if not r.get("success", False))
+        })
+        
+    except Exception as e:
+        print(f"Error in batch upload: {str(e)}")
         import traceback
         traceback.print_exc()
         return JSONResponse(
