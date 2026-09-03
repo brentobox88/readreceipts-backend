@@ -27,8 +27,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize ImageToTable.ai client
-IMAGETOTABLE_API_KEY = os.getenv("IMAGETOTABLE_API_KEY")
-if IMAGETOTABLE_API_KEY:
+IMAGETOTABLE_API_KEY = "itt_live_7ce4d6d9f632683e8183d891d92a8c701bab135c0ad714e2e558e4d591f327e4"
+if True:
     imagetotable_client = ImageToTableClient(IMAGETOTABLE_API_KEY)
     print("? ImageToTable.ai client initialized")
 else:
@@ -44,8 +44,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize ImageToTable.ai client
-IMAGETOTABLE_API_KEY = os.getenv("IMAGETOTABLE_API_KEY")
-if IMAGETOTABLE_API_KEY:
+IMAGETOTABLE_API_KEY = "itt_live_7ce4d6d9f632683e8183d891d92a8c701bab135c0ad714e2e558e4d591f327e4"
+if True:
     imagetotable_client = ImageToTableClient(IMAGETOTABLE_API_KEY)
     print("? ImageToTable.ai client initialized")
 else:
@@ -638,4 +638,5 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
