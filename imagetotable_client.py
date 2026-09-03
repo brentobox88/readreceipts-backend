@@ -23,7 +23,11 @@ class ImageToTableClient:
         
         with open(file_path, 'rb') as f:
             files = {'file': (os.path.basename(file_path), f, 'image/jpeg')}
-            response = requests.post(url, headers={"Authorization": f"Bearer {self.api_key}"}, files=files)
+            print(f"?? Uploading to: {url}")
+        print(f"?? Using API Key: {self.api_key[:10]}...")
+        response = requests.post(url, headers={"Authorization": f"Bearer {self.api_key}"}, files=files)
+        print(f"?? Response status: {response.status_code}")
+        print(f"?? Response text: {response.text}")
         
         response.raise_for_status()
         return response.json()
@@ -34,7 +38,11 @@ class ImageToTableClient:
         """
         url = f"{self.base_url}/documents"
         files = {'file': (filename, file_content, 'image/jpeg')}
+        print(f"?? Uploading to: {url}")
+        print(f"?? Using API Key: {self.api_key[:10]}...")
         response = requests.post(url, headers={"Authorization": f"Bearer {self.api_key}"}, files=files)
+        print(f"?? Response status: {response.status_code}")
+        print(f"?? Response text: {response.text}")
         response.raise_for_status()
         return response.json()
 
@@ -84,3 +92,4 @@ class ImageToTableClient:
             time.sleep(2)
         
         raise TimeoutError("Batch processing timed out")
+

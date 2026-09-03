@@ -409,7 +409,9 @@ async def process_receipt_imagetotable(file: UploadFile = File(...)):
             tmp_path = tmp_file.name
         
         try:
-            results = imagetotable_client.upload_and_process(tmp_path)
+            print(f"?? Calling ImageToTable.ai with file: {tmp_path}")
+        results = imagetotable_client.upload_and_process(tmp_path)
+        print(f"?? Results: {results}")
         finally:
             os.unlink(tmp_path)
         
@@ -638,5 +640,6 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
