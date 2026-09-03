@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
@@ -19,6 +19,8 @@ PROCESSOR_ID = "896553633cd26552"
 
 # Import Document AI processor
 from document_ai_service import document_ai_processor
+
+# Import ImageToTable.ai client
 from imagetotable_client import ImageToTableClient
 import os
 from dotenv import load_dotenv
@@ -30,68 +32,12 @@ load_dotenv()
 IMAGETOTABLE_API_KEY = os.getenv("IMAGETOTABLE_API_KEY")
 if IMAGETOTABLE_API_KEY:
     imagetotable_client = ImageToTableClient(IMAGETOTABLE_API_KEY)
-    print("? ImageToTable.ai client initialized")
+    print("✅ ImageToTable.ai client initialized")
 else:
-    print("?? IMAGETOTABLE_API_KEY not set")
+    print("⚠️ IMAGETOTABLE_API_KEY not set")
     imagetotable_client = None
-from agentic_doc import DocumentProcessor
 
 DOC_AI_AVAILABLE = True
-
-# ============================================
-# AGENTIC AI BATCH PROCESSING
-# ============================================
-def process_batch_images(image_contents: list, filenames: list) -> list:
-    """
-    Process multiple images using agentic-doc.
-    Returns a list of results for each image.
-    """
-    results = []
-    
-    try:
-        # Initialize the processor
-        processor = DocumentProcessor(
-            project_id=PROJECT_ID,
-            location="us",
-            processor_id=PROCESSOR_ID,
-        )
-        
-        # Process the batch
-        batch_results = processor.process_batch(
-            documents=image_contents,
-            mime_types=["image/jpeg"] * len(image_contents),
-            filenames=filenames,
-            timeout=300
-        )
-        
-        for i, doc_result in enumerate(batch_results):
-            try:
-                results.append({
-                    "filename": filenames[i],
-                    "success": True,
-                    "data": doc_result,
-                    "text": doc_result.get("text", ""),
-                    "confidence": doc_result.get("confidence", 0),
-                })
-            except Exception as e:
-                results.append({
-                    "filename": filenames[i],
-                    "success": False,
-                    "error": str(e)
-                })
-                
-    except Exception as e:
-        results = [
-            {
-                "filename": f,
-                "success": False,
-                "error": str(e)
-            }
-            for f in filenames
-        ]
-    
-    return results
-# ============================================
 
 app = FastAPI(title="ReadReceipts API", version="1.0")
 
@@ -277,9 +223,9 @@ async def upload_receipt(file: UploadFile = File(...)):
         
         file_path = os.path.join(upload_dir, file.filename)
         content = await file.read()
-        print(f"?? File received: {file.filename}")
-        print(f"?? Content size: {len(content)} bytes")
-        print(f"?? First 100 bytes: {content[:100]}")
+        print(f"📸 File received: {file.filename}")
+        print(f"📏 Content size: {len(content)} bytes")
+        print(f"🔍 First 100 bytes: {content[:100]}")
         
         with open(file_path, "wb") as f:
             f.write(content)
@@ -424,35 +370,66 @@ async def upload_receipt(file: UploadFile = File(...)):
             content={"error": str(e)}
         )
 
-@app.post("/batch-upload")
-async def batch_upload_receipt(files: list[UploadFile] = File(...)):
+@app.post("/process-receipt-imagetotable")
+async def process_receipt_imagetotable(file: UploadFile = File(...)):
     """
-    Batch upload endpoint using agentic AI.
-    Processes multiple images in a single request.
+    Process a receipt using ImageToTable.ai
     """
+    if not imagetotable_client:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "ImageToTable.ai client not configured. Set IMAGETOTABLE_API_KEY environment variable."}
+        )
+    
     try:
-        # Read all files into memory
-        image_contents = []
-        filenames = []
+        # Read the file content
+        content = await file.read()
         
-        for file in files:
-            content = await file.read()
-            image_contents.append(content)
-            filenames.append(file.filename)
+        # Upload and process using ImageToTable.ai
+        # Note: The client currently uses file path, we'll update this
+        # to handle bytes directly
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
         
-        # Process using agentic-doc
-        results = process_batch_images(image_contents, filenames)
+        try:
+            results = imagetotable_client.upload_and_process(tmp_path)
+        finally:
+            os.unlink(tmp_path)
+        
+        # Extract the structured data
+        documents = results.get("documents", [])
+        if not documents:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No data extracted from receipt"}
+            )
+        
+        # Get the first document's data
+        doc = documents[0]
+        line_items = doc.get("line_items", [])
+        
+        # Create a structured response
+        receipt_data = {
+            "merchant": doc.get("merchant", "Unknown"),
+            "date": doc.get("date", ""),
+            "subtotal": doc.get("subtotal", 0),
+            "tax": doc.get("tax", 0),
+            "total": doc.get("total", 0),
+            "line_items": line_items,
+            "document_type": doc.get("document_type", "expense"),
+            "category": doc.get("category", "Uncategorized"),
+        }
         
         return JSONResponse(content={
             "success": True,
-            "total": len(files),
-            "results": results,
-            "success_count": sum(1 for r in results if r.get("success", False)),
-            "fail_count": sum(1 for r in results if not r.get("success", False))
+            "data": receipt_data,
+            "raw": results
         })
         
     except Exception as e:
-        print(f"Error in batch upload: {str(e)}")
+        print(f"Error in process_receipt_imagetotable: {str(e)}")
         import traceback
         traceback.print_exc()
         return JSONResponse(
@@ -646,5 +623,3 @@ if __name__ == '__main__':
     print("[START] Starting ReadReceipts API on 0.0.0.0:8000")
     print("[APP] Your mobile app should use: http://10.0.0.229:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
