@@ -5,6 +5,8 @@ from sqlalchemy.sql import func
 import uuid
 from enum import Enum
 
+from app.database import Base  # <-- ADD THIS IMPORT
+
 class BatchStatus(str, Enum):
     CREATED = "created"
     UPLOADING = "uploading"
