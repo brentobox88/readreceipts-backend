@@ -1,4 +1,4 @@
-﻿# app/main.py
+# app/main.py
 import os
 import uuid
 import json
@@ -26,12 +26,19 @@ IMAGETOTABLE_API_KEY = os.getenv("IMAGETOTABLE_API_KEY")
 
 if IMAGETOTABLE_API_KEY:
     imagetotable_client = ImageToTableClient(IMAGETOTABLE_API_KEY)
-    print("✅ ImageToTable.ai client initialized")
+    print("? ImageToTable.ai client initialized")
 else:
-    print("⚠️ IMAGETOTABLE_API_KEY not set")
+    print("?? IMAGETOTABLE_API_KEY not set")
     imagetotable_client = None
 
 Base.metadata.create_all(bind=engine)
+
+# Run migrations for existing tables
+try:
+    from migrate_live_db import migrate
+    migrate()
+except Exception as e:
+    print(f"Migration warning: {e}")
 
 app = FastAPI(title="ReadReceipts API", version="2.0")
 
@@ -384,3 +391,4 @@ async def generate_report(request: Request, db: Session = Depends(get_db)):
 if __name__ == '__main__':
     print("[START] Starting ReadReceipts API v2.0")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
