@@ -1,9 +1,30 @@
 ﻿services:
+  # Web API
   - type: web
     name: readreceipts-api
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.10
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/google-credentials.json
+      - key: PROJECT_ID
+        value: receipt-relief
+      - key: PROCESSOR_ID
+        value: 896553633cd26552
+      - key: IMAGETOTABLE_API_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+
+  # Background Worker
+  - type: worker
+    name: readreceipts-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m rq.cli worker --url $REDIS_URL default
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.10
