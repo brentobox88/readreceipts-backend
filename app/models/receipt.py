@@ -1,10 +1,24 @@
-﻿# app/models/receipt.py
+# app/models/receipt.py
 from sqlalchemy import Column, String, DateTime, Float, JSON, Text, Boolean, Integer
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid
 
 class Receipt(Base):
+    __tablename__ = "receipts"
+    
+    # Existing columns...
+    # Add these new columns:
+    batch_id = Column(String(36), ForeignKey("batches.id"), nullable=True)
+    storage_path = Column(String(500), nullable=True)
+    raw_document_ai_json = Column(JSON, nullable=True)
+    normalized_json = Column(JSON, nullable=True)
+    error_message = Column(Text, nullable=True)
+    file_size = Column(Integer, nullable=True)
+    manually_edited = Column(Integer, default=0)
+    
+    # Relationship
+    batch = relationship("Batch", back_populates="receipts")
     __tablename__ = "receipts"
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -51,3 +65,4 @@ class Receipt(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     processed_at = Column(DateTime(timezone=True), nullable=True)
+
