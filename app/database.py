@@ -23,7 +23,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 def get_db():
-    \"\"\"Dependency for FastAPI endpoints\"\"\"
+    # Dependency for FastAPI endpoints
     db = SessionLocal()
     try:
         yield db
