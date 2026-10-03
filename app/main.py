@@ -1,4 +1,4 @@
-# app/main.py
+﻿# app/main.py
 import os
 import uuid
 import json
@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -254,7 +255,7 @@ async def get_batch(batch_id: str, db: Session = Depends(get_db)):
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
     progress = TaskQueueService.get_batch_progress(batch_id, db)
-    return JSONResponse(content={
+    return JSONResponse(content=jsonable_encoder({
         "id": batch.id,
         "name": batch.name,
         "status": batch.status,
@@ -265,7 +266,7 @@ async def get_batch(batch_id: str, db: Session = Depends(get_db)):
         "total_amount": batch.total_amount,
         "avg_confidence": batch.avg_confidence,
         "progress": progress
-    })
+    }))
 
 @app.get("/batches/{batch_id}/receipts")
 async def get_batch_receipts(batch_id: str, db: Session = Depends(get_db)):
@@ -391,4 +392,6 @@ async def generate_report(request: Request, db: Session = Depends(get_db)):
 if __name__ == '__main__':
     print("[START] Starting ReadReceipts API v2.0")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
 
