@@ -1,13 +1,15 @@
 ﻿import os
-import requests
 import json
 import time
 from typing import List, Dict, Any, Optional
 
+from curl_cffi import requests as curl_requests
+
 
 class ImageToTableClient:
     """
-    Client for ImageToTable.ai API
+    Client for ImageToTable.ai API using curl_cffi to bypass Cloudflare's
+    TLS fingerprinting (impersonates Chrome 120).
     """
 
     def __init__(self, api_key: Optional[str] = None):
@@ -17,7 +19,7 @@ class ImageToTableClient:
         self.base_url = "https://imagetotable.ai/api/v1"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
     def upload_document(self, file_path: str) -> Dict[str, Any]:
@@ -26,20 +28,20 @@ class ImageToTableClient:
         """
         url = f"{self.base_url}/documents"
 
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             file_content = f.read()
 
-        # Send bytes, not a file handle
         files = {
-            'file': (os.path.basename(file_path), file_content, 'image/jpeg')
+            "file": (os.path.basename(file_path), file_content, "image/jpeg")
         }
         print(f"Uploading to: {url}")
         print(f"Using API Key: {self.api_key[:10]}...")
 
-        response = requests.post(
+        response = curl_requests.post(
             url,
             headers={"Authorization": f"Bearer {self.api_key}"},
             files=files,
+            impersonate="chrome120",
             timeout=60,
         )
         print(f"Response status: {response.status_code}")
@@ -53,14 +55,15 @@ class ImageToTableClient:
         Upload a document from bytes (e.g., from a frontend upload)
         """
         url = f"{self.base_url}/documents"
-        files = {'file': (filename, file_content, 'image/jpeg')}
+        files = {"file": (filename, file_content, "image/jpeg")}
         print(f"Uploading to: {url}")
         print(f"Using API Key: {self.api_key[:10]}...")
 
-        response = requests.post(
+        response = curl_requests.post(
             url,
             headers={"Authorization": f"Bearer {self.api_key}"},
             files=files,
+            impersonate="chrome120",
             timeout=60,
         )
         print(f"Response status: {response.status_code}")
@@ -74,7 +77,12 @@ class ImageToTableClient:
         Get the results of a processed batch
         """
         url = f"{self.base_url}/batches/{batch_name}/results"
-        response = requests.get(url, headers=self.headers, timeout=30)
+        response = curl_requests.get(
+            url,
+            headers=self.headers,
+            impersonate="chrome120",
+            timeout=30,
+        )
         response.raise_for_status()
         return response.json()
 
