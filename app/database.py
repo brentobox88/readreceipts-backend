@@ -1,29 +1,28 @@
 ﻿# app/database.py
 import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Database path (Render uses a persistent disk)
-DB_PATH = '/opt/render/project/src/data/receipts.db'
+# Read DATABASE_URL from environment (Render Postgres on production, SQLite locally)
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./data/receipts.db")
 
-# Ensure the directory exists
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+# Render provides postgres:// but SQLAlchemy wants postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# SQLAlchemy setup
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
+# SQLite-specific settings only
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+    os.makedirs("./data", exist_ok=True)
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
 def get_db():
-    # Dependency for FastAPI endpoints
     db = SessionLocal()
     try:
         yield db
