@@ -42,6 +42,8 @@ def process_receipt_task(
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
             tmp.write(file_bytes)
+            tmp.flush()
+            os.fsync(tmp.fileno())
             tmp_path = tmp.name
         
         try:
@@ -138,3 +140,4 @@ def _update_batch_progress(batch_id: str, db):
         batch.avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
     
     db.commit()
+

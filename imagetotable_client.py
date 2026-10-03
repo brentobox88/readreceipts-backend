@@ -1,14 +1,19 @@
-import os
+﻿import os
 import requests
 import json
+import time
 from typing import List, Dict, Any, Optional
+
 
 class ImageToTableClient:
     """
     Client for ImageToTable.ai API
     """
-    def __init__(self, api_key: str):
-        self.api_key = api_key
+
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("IMAGETOTABLE_API_KEY")
+        if not self.api_key:
+            raise ValueError("IMAGETOTABLE_API_KEY is not set")
         self.base_url = "https://imagetotable.ai/api/v1"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -20,15 +25,26 @@ class ImageToTableClient:
         Upload a document to ImageToTable.ai
         """
         url = f"{self.base_url}/documents"
-        
+
         with open(file_path, 'rb') as f:
-            files = {'file': (os.path.basename(file_path), f, 'image/jpeg')}
-            print(f"?? Uploading to: {url}")
-        print(f"?? Using API Key: {self.api_key[:10]}...")
-        response = requests.post(url, headers={"Authorization": f"Bearer {self.api_key}"}, files=files)
-        print(f"?? Response status: {response.status_code}")
-        print(f"?? Response text: {response.text}")
-        
+            file_content = f.read()
+
+        # Send bytes, not a file handle
+        files = {
+            'file': (os.path.basename(file_path), file_content, 'image/jpeg')
+        }
+        print(f"Uploading to: {url}")
+        print(f"Using API Key: {self.api_key[:10]}...")
+
+        response = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            files=files,
+            timeout=60,
+        )
+        print(f"Response status: {response.status_code}")
+        print(f"Response text: {response.text[:500]}")
+
         response.raise_for_status()
         return response.json()
 
@@ -38,20 +54,18 @@ class ImageToTableClient:
         """
         url = f"{self.base_url}/documents"
         files = {'file': (filename, file_content, 'image/jpeg')}
-        print(f"?? Uploading to: {url}")
-        print(f"?? Using API Key: {self.api_key[:10]}...")
-        response = requests.post(url, headers={"Authorization": f"Bearer {self.api_key}"}, files=files)
-        print(f"?? Response status: {response.status_code}")
-        print(f"?? Response text: {response.text}")
-        response.raise_for_status()
-        return response.json()
+        print(f"Uploading to: {url}")
+        print(f"Using API Key: {self.api_key[:10]}...")
 
-    def process_batch(self, batch_name: str) -> Dict[str, Any]:
-        """
-        Process a batch of documents
-        """
-        url = f"{self.base_url}/batches/{batch_name}/process"
-        response = requests.post(url, headers=self.headers)
+        response = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            files=files,
+            timeout=60,
+        )
+        print(f"Response status: {response.status_code}")
+        print(f"Response text: {response.text[:500]}")
+
         response.raise_for_status()
         return response.json()
 
@@ -60,7 +74,7 @@ class ImageToTableClient:
         Get the results of a processed batch
         """
         url = f"{self.base_url}/batches/{batch_name}/results"
-        response = requests.get(url, headers=self.headers)
+        response = requests.get(url, headers=self.headers, timeout=30)
         response.raise_for_status()
         return response.json()
 
@@ -68,28 +82,21 @@ class ImageToTableClient:
         """
         Upload a document, process it, and return the results
         """
-        # Upload the document
         upload_response = self.upload_document(file_path)
         batch_name = upload_response.get("batch_name")
-        
+
         if not batch_name:
-            raise ValueError("No batch_name returned from upload")
-        
-        # Process the batch
-        process_response = self.process_batch(batch_name)
-        
-        # Wait for processing to complete (simple polling)
-        import time
-        for _ in range(10):  # Try up to 10 times
+            raise ValueError(f"No batch_name returned from upload: {upload_response}")
+
+        for _ in range(15):
             results = self.get_results(batch_name)
             status = results.get("status")
-            
+
             if status == "succeeded":
                 return results
             elif status == "failed":
                 raise Exception(f"Batch processing failed: {results}")
-            
-            time.sleep(2)
-        
-        raise TimeoutError("Batch processing timed out")
 
+            time.sleep(2)
+
+        raise TimeoutError("Batch processing timed out")
