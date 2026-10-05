@@ -13,3 +13,4 @@ rq
 redis
 psycopg2-binary==2.9.9
 curl_cffi
+pillow-heif
