@@ -47,11 +47,9 @@ class ImageToTableClient:
     def upload_document(self, file_path: str) -> Dict[str, Any]:
         url = f"{self.base_url}/documents"
 
-        # Read file into memory
         with open(file_path, "rb") as f:
             file_content = f.read()
 
-        # Build multipart form using CurlMime
         mp = CurlMime()
         mp.addpart(
             name="file",
@@ -61,15 +59,11 @@ class ImageToTableClient:
         )
 
         print(f"Uploading to: {url}")
-        print(f"Using API Key: {self.api_key[:10]}...")
-
         response = self._post(
             url,
             headers={"Authorization": f"Bearer {self.api_key}"},
             multipart=mp,
         )
-
-        # Clean up MIME object
         mp.close()
 
         print(f"Response status: {response.status_code}")
@@ -78,26 +72,18 @@ class ImageToTableClient:
         response.raise_for_status()
         return response.json()
 
-    def upload_document_from_bytes(self, file_content: bytes, filename: str) -> Dict[str, Any]:
-        url = f"{self.base_url}/documents"
-        mp = CurlMime()
-        mp.addpart(
-            name="file",
-            content_type="image/jpeg",
-            filename=filename,
-            data=file_content,
-        )
+    def start_processing(self, batch_name: str, fields: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Call /process to start extraction for the batch."""
+        url = f"{self.base_url}/batches/{batch_name}/process"
+        print(f"Starting processing: {url}")
 
-        print(f"Uploading to: {url}")
         response = self._post(
             url,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            multipart=mp,
+            headers=self.headers,
+            json={"fields": fields},
         )
-        mp.close()
-
-        print(f"Response status: {response.status_code}")
-        print(f"Response text: {response.text[:500]}")
+        print(f"Process status: {response.status_code}")
+        print(f"Process text: {response.text[:500]}")
 
         response.raise_for_status()
         return response.json()
@@ -109,21 +95,33 @@ class ImageToTableClient:
         return response.json()
 
     def upload_and_process(self, file_path: str, fields: Optional[List[str]] = None) -> Dict[str, Any]:
+        # 1. Upload
         upload_response = self.upload_document(file_path)
         batch_name = upload_response.get("batch_name")
 
         if not batch_name:
             raise ValueError(f"No batch_name returned from upload: {upload_response}")
 
-        for _ in range(15):
+        # 2. Define extraction fields
+        if fields is None:
+            fields = ["merchant_name", "transaction_date", "total_amount", "tax_amount", "line_items"]
+
+        field_specs = [{"name": f} for f in fields]
+
+        # 3. Trigger processing
+        self.start_processing(batch_name, field_specs)
+
+        # 4. Poll for results (with longer timeout)
+        for attempt in range(30):  # 30 attempts × 3s = 90s max
+            time.sleep(3)
             results = self.get_results(batch_name)
             status = results.get("status")
+
+            print(f"Poll {attempt+1}: status={status}")
 
             if status == "succeeded":
                 return results
             elif status == "failed":
                 raise Exception(f"Batch processing failed: {results}")
 
-            time.sleep(2)
-
-        raise TimeoutError("Batch processing timed out")
+        raise TimeoutError(f"Batch processing timed out after 90s. Last status: {status}")
