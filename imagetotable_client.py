@@ -120,10 +120,10 @@ class ImageToTableClient:
             print(f"Poll {attempt+1}: status={status}")
 
             if status == "succeeded":
-                print(f"FULL RESULTS: {json.dumps(results, indent=2)[:2000]}")
                 return results
             elif status == "failed":
                 raise Exception(f"Batch processing failed: {results}")
 
         raise TimeoutError(f"Batch processing timed out after 90s. Last status: {status}")
+
 
