@@ -57,15 +57,29 @@ def process_receipt_task(
         
         doc = documents[0]
         
+        # ImageToTable nests extracted fields inside line_items[0]
+        line_items = doc.get("line_items", [])
+        extracted = line_items[0] if line_items else {}
+        
+        def safe_float(val):
+            if val is None:
+                return 0.0
+            if isinstance(val, str):
+                val = val.replace(",", "").replace("$", "").strip()
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return 0.0
+        
         # Step 2: Update receipt with extracted data
-        receipt.merchant_name = doc.get("merchant", "Unknown")
-        receipt.transaction_date = doc.get("date", "")
-        receipt.subtotal = float(doc.get("subtotal", 0))
-        receipt.tax_amount = float(doc.get("tax", 0))
-        receipt.total_amount = float(doc.get("total", 0))
-        receipt.line_items = json.dumps(doc.get("line_items", []))
-        receipt.category = doc.get("category", "Uncategorized")
-        receipt.document_type = doc.get("document_type", "expense")
+        receipt.merchant_name = extracted.get("merchant_name") or extracted.get("vendor_name") or "Unknown"
+        receipt.transaction_date = extracted.get("transaction_date") or extracted.get("invoice_date") or ""
+        receipt.subtotal = safe_float(extracted.get("subtotal"))
+        receipt.tax_amount = safe_float(extracted.get("tax_amount") or extracted.get("tax"))
+        receipt.total_amount = safe_float(extracted.get("total_amount") or extracted.get("total"))
+        receipt.line_items = json.dumps(extracted.get("line_items", []))
+        receipt.category = extracted.get("category", "Uncategorized")
+        receipt.document_type = extracted.get("document_type", "expense")
         receipt.status = "completed"
         receipt.processed_at = datetime.now()
         receipt.confidence_score = 0.95
@@ -140,4 +154,5 @@ def _update_batch_progress(batch_id: str, db):
         batch.avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
     
     db.commit()
+
 
