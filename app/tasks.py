@@ -89,6 +89,7 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
         doc = documents[0]
         line_items = doc.get("line_items", [])
         extracted = line_items[0] if line_items else {}
+        logger.info(f"Extracted fields: {extracted}")
 
         receipt.merchant_name = extracted.get("merchant_name") or "Unknown"
         receipt.transaction_date = extracted.get("transaction_date") or ""
@@ -121,4 +122,5 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
         raise
     finally:
         db.close()
+
 
