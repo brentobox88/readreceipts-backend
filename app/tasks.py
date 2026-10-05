@@ -18,14 +18,23 @@ logger = logging.getLogger(__name__)
 
 
 def safe_float(val):
+    """Parse a value into a float, stripping currency symbols and labels."""
     if val is None:
         return 0.0
-    if isinstance(val, str):
-        val = val.replace(",", "").replace("$", "").strip()
-    try:
+    if isinstance(val, (int, float)):
         return float(val)
-    except (ValueError, TypeError):
-        return 0.0
+    if isinstance(val, str):
+        import re
+        # Remove currency symbols, letters, and labels; keep digits, dot, minus
+        cleaned = val.replace(",", "")
+        # Match the first number-like pattern in the string
+        match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
+        if match:
+            try:
+                return float(match.group(0))
+            except (ValueError, TypeError):
+                return 0.0
+    return 0.0
 
 
 def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
@@ -112,3 +121,4 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
         raise
     finally:
         db.close()
+
