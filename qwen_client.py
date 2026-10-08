@@ -11,15 +11,15 @@ class QwenClient:
     """
     Client for the Qwen2.5-VL-7B Runpod endpoint.
 
-    Sends a base64-encoded image to the endpoint's /runsync API and polls
-    until the result is ready. Returns a dict with the extracted fields.
+    Uses /run (async) + polling instead of /runsync to avoid 409 Conflict
+    errors when the endpoint is busy or queuing multiple jobs.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         endpoint_id: Optional[str] = None,
-        timeout_seconds: int = 300,
+        timeout_seconds: int = 600,
     ):
         self.api_key = api_key or os.getenv("RUNPOD_API_KEY")
         self.endpoint_id = endpoint_id or os.getenv("QWEN_ENDPOINT_ID")
@@ -40,35 +40,32 @@ class QwenClient:
 
     def process_image_bytes(self, image_bytes: bytes) -> Dict[str, Any]:
         """
-        Send image bytes to the Runpod endpoint and return the parsed result.
+        Send image bytes to the Runpod endpoint via /run and poll for result.
         """
         image_b64 = base64.b64encode(image_bytes).decode("ascii")
-
         body = {"input": {"image_base64": image_b64}}
 
-        # Submit the job
-        print(f"Submitting to Runpod endpoint: {self.endpoint_id}")
+        # Submit the job via /run (async, returns immediately)
+        print(f"Submitting to Runpod endpoint: {self.endpoint_id} via /run")
         submit = requests.post(
-            f"{self.base_url}/runsync",
+            f"{self.base_url}/run",
             headers=self._headers(),
             json=body,
-            timeout=self.timeout_seconds,
+            timeout=60,
         )
         submit.raise_for_status()
         response = submit.json()
 
         job_id = response.get("id")
-        status = response.get("status")
-        print(f"Runpod job {job_id} initial status: {status}")
+        if not job_id:
+            raise RuntimeError(f"Runpod did not return a job id: {response}")
 
-        # If /runsync returned the result inline (warm worker), use it
-        if status == "COMPLETED" and response.get("output"):
-            return response["output"]
+        print(f"Runpod job {job_id} submitted")
 
-        # Otherwise poll until complete
+        # Poll for completion
         deadline = time.time() + self.timeout_seconds
         while time.time() < deadline:
-            time.sleep(5)
+            time.sleep(3)
             poll = requests.get(
                 f"{self.base_url}/status/{job_id}",
                 headers=self._headers(),
@@ -77,12 +74,15 @@ class QwenClient:
             poll.raise_for_status()
             result = poll.json()
             status = result.get("status")
-            print(f"Poll status: {status}")
+            print(f"Poll {job_id}: status={status}")
 
             if status == "COMPLETED":
-                return result.get("output", {})
-            if status == "FAILED":
-                raise RuntimeError(f"Runpod job failed: {result.get('output')}")
+                output = result.get("output", {})
+                if output.get("error"):
+                    raise RuntimeError(f"Qwen extraction failed: {output}")
+                return output
+            if status in ("FAILED", "CANCELLED"):
+                raise RuntimeError(f"Runpod job {job_id} failed: {result.get('output')}")
 
         raise TimeoutError(f"Runpod job {job_id} timed out after {self.timeout_seconds}s")
 
