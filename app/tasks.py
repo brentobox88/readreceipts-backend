@@ -35,6 +35,51 @@ def safe_float(val):
     return 0.0
 
 
+def _update_batch_progress(batch_id, db):
+    """Recompute batch progress and status based on its receipts."""
+    from sqlalchemy import func
+
+    batch = db.query(Batch).filter(Batch.id == batch_id).first()
+    if not batch:
+        return
+
+    total = db.query(func.count(Receipt.id)).filter(
+        Receipt.batch_id == batch_id
+    ).scalar() or 0
+
+    completed = db.query(func.count(Receipt.id)).filter(
+        Receipt.batch_id == batch_id,
+        Receipt.status == "completed"
+    ).scalar() or 0
+
+    failed = db.query(func.count(Receipt.id)).filter(
+        Receipt.batch_id == batch_id,
+        Receipt.status == "failed"
+    ).scalar() or 0
+
+    batch.total_files = total
+    batch.processed_files = completed
+    batch.failed_files = failed
+
+    if total > 0:
+        batch.progress_percent = round(((completed + failed) / total) * 100.0, 2)
+    else:
+        batch.progress_percent = 0.0
+
+    if total == 0:
+        batch.status = "created"
+    elif (completed + failed) < total:
+        batch.status = "processing"
+    elif failed == total:
+        batch.status = "failed"
+    elif failed > 0:
+        batch.status = "partial"
+    else:
+        batch.status = "completed"
+
+    db.commit()
+
+
 def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
     db = SessionLocal()
     try:
@@ -61,11 +106,9 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
         try:
             img = Image.open(tmp_path)
 
-            # Convert to RGB (handles HEIC, PNG with alpha, etc.)
             if img.mode != "RGB":
                 img = img.convert("RGB")
 
-            # Resize so the longest edge is at most 1600px
             max_dim = 1600
             w, h = img.size
             if max(w, h) > max_dim:
@@ -73,7 +116,6 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
                 img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
                 logger.info(f"Resized image from {w}x{h} to {img.size}")
 
-            # Save as JPEG with compression
             img.save(jpg_path, "JPEG", quality=80, optimize=True)
             logger.info(f"Compressed to {os.path.getsize(jpg_path)} bytes")
 
@@ -114,6 +156,9 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
         db.commit()
         logger.info(f"Successfully processed receipt {receipt_id}")
 
+        # Update batch progress
+        _update_batch_progress(batch_id, db)
+
         return {"receipt_id": receipt_id, "status": "completed"}
 
     except Exception as e:
@@ -126,6 +171,13 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
                 db.commit()
         except Exception as inner:
             logger.error(f"Failed to mark receipt as failed: {inner}")
+
+        # Update batch progress on failure too
+        try:
+            _update_batch_progress(batch_id, db)
+        except Exception as inner:
+            logger.error(f"Failed to update batch progress: {inner}")
+
         raise
     finally:
         db.close()
