@@ -1,4 +1,4 @@
-﻿# app/tasks.py — updated with HEIC conversion
+# app/tasks.py — Qwen2.5-VL via Runpod
 import os
 import json
 import tempfile
@@ -9,7 +9,7 @@ from PIL import Image
 from app.database import SessionLocal
 from app.models.receipt import Receipt
 from app.models.batch import Batch
-from imagetotable_client import ImageToTableClient
+from qwen_client import QwenClient
 from pillow_heif import register_heif_opener
 
 register_heif_opener()
@@ -25,9 +25,7 @@ def safe_float(val):
         return float(val)
     if isinstance(val, str):
         import re
-        # Remove currency symbols, letters, and labels; keep digits, dot, minus
         cleaned = val.replace(",", "")
-        # Match the first number-like pattern in the string
         match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
         if match:
             try:
@@ -70,35 +68,36 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
                 logger.info(f"Converted to {jpg_path}")
         except Exception as e:
             logger.warning(f"Image conversion check failed: {e}")
-            # Use original file if conversion check fails
             jpg_path = tmp_path
 
+        # Send to Qwen endpoint
         try:
-            client = ImageToTableClient(os.getenv("IMAGETOTABLE_API_KEY"))
-            results = client.upload_and_process(jpg_path)
+            client = QwenClient()
+            extracted = client.process_image_file(jpg_path)
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
             if jpg_path != tmp_path and os.path.exists(jpg_path):
                 os.unlink(jpg_path)
 
-        documents = results.get("documents", [])
-        if not documents:
-            raise ValueError("No data extracted from receipt")
+        if not extracted or extracted.get("error"):
+            raise ValueError(f"Qwen extraction failed: {extracted}")
 
-        doc = documents[0]
-        line_items = doc.get("line_items", [])
-        extracted = line_items[0] if line_items else {}
         logger.info(f"Extracted fields: {extracted}")
 
+        # Map Qwen output -> Receipt model
         receipt.merchant_name = extracted.get("merchant_name") or "Unknown"
         receipt.transaction_date = extracted.get("transaction_date") or ""
         receipt.subtotal = safe_float(extracted.get("subtotal"))
         receipt.tax_amount = safe_float(extracted.get("tax_amount"))
         receipt.total_amount = safe_float(extracted.get("total_amount"))
-        receipt.line_items = json.dumps(extracted.get("line_items", ""))
+        receipt.line_items = extracted.get("line_items") or ""
         receipt.category = extracted.get("category", "Uncategorized")
         receipt.document_type = extracted.get("document_type", "expense")
+
+        # Store raw response for debugging/audit
+        receipt.normalized_json = extracted
+
         receipt.status = "completed"
         receipt.processed_at = datetime.now()
         receipt.confidence_score = 0.95
@@ -110,7 +109,6 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Error processing receipt {receipt_id}: {e}")
         try:
             receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
             if receipt:
@@ -122,5 +120,3 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
         raise
     finally:
         db.close()
-
-
