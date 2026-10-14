@@ -1,66 +1,51 @@
-# main.py - ReadReceipts Backend with Real OCR (Windows Compatible)
+# app/main.py
 import os
-import sys
-import logging
+import uuid
+import json
+import io
+import csv
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
-from fastapi.responses import FileResponse
+from typing import List, Optional
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-from dotenv import load_dotenv
-
-# Document AI Service
-from document_ai_service import document_ai_processor
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+import uvicorn
 
-# Load environment variables
-load_dotenv()
-
-# Create required directories
-os.makedirs("logs", exist_ok=True)
-os.makedirs("uploads/receipts", exist_ok=True)
-os.makedirs("exports", exist_ok=True)
-
-# Set up logging
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(os.path.join("logs", "app.log"), mode='a', encoding='utf-8')
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Import database and models
-from app.database import engine, Base, get_db
+from app.database import get_db, engine, Base
+from app.models.batch import Batch, BatchStatus
 from app.models.receipt import Receipt
+from app.services.task_queue import TaskQueueService
+from imagetotable_client import ImageToTableClient
 
-# Create database tables
+PROJECT_ID = os.getenv("PROJECT_ID", "receipt-relief")
+PROCESSOR_ID = os.getenv("PROCESSOR_ID", "896553633cd26552")
+IMAGETOTABLE_API_KEY = os.getenv("IMAGETOTABLE_API_KEY")
+
+if IMAGETOTABLE_API_KEY:
+    imagetotable_client = ImageToTableClient(IMAGETOTABLE_API_KEY)
+    print("? ImageToTable.ai client initialized")
+else:
+    print("?? IMAGETOTABLE_API_KEY not set")
+    imagetotable_client = None
+
 Base.metadata.create_all(bind=engine)
-logger.info("Database tables created successfully")
 
-# Initialize OCR service
-ocr_available = False
-ocr_service = None
+# Run migrations for existing tables
 try:
-    from app.services.ocr.google_document_ai import GoogleDocumentAI
-    ocr_service = GoogleDocumentAI()
-    ocr_available = True
-    logger.info("Google Document AI OCR service initialized successfully")
+    from migrate_live_db import migrate
+    migrate()
 except Exception as e:
-    logger.warning(f"OCR service not available: {e}")
+    print(f"Migration warning: {e}")
 
-# Initialize FastAPI
-app = FastAPI(
-    title="Read Receipts",
-    description="Receipt processing with Google Document AI OCR",
-    version="3.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
+app = FastAPI(title="ReadReceipts API", version="2.0")
 
-# CORS - Allow all origins for testing
+os.makedirs("uploads/receipts", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -69,309 +54,386 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads/receipts")
-EXPORT_DIR = os.getenv("EXPORT_DIR", "exports")
+
+def parse_line_items(raw):
+    """Handle line_items that may be JSON, plain string, or None."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if stripped.startswith("[") or stripped.startswith("{"):
+            try:
+                return json.loads(stripped)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        # Qwen returns plain strings; wrap them so the client always gets a list
+        return [stripped]
+    return []
+
+
+def parse_json_safe(raw, default):
+    """Safely parse a JSON string field, returning default on failure."""
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return default
+
 
 @app.get("/")
 async def root():
+    return {"message": "ReadReceipts API is running", "status": "healthy"}
+
+@app.get("/debug")
+def debug():
     return {
-        "app": "Read Receipts",
-        "version": "3.0.0",
-        "status": "running",
-        "ocr": "available" if ocr_available else "unavailable",
-        "endpoints": {
-            "upload": "POST /upload",
-            "receipts": "GET /receipts",
-            "export_excel": "GET /export/excel",
-            "export_csv": "GET /export/csv",
-            "health": "GET /health",
-            "docs": "GET /docs"
-        }
+        "PROJECT_ID": PROJECT_ID,
+        "PROCESSOR_ID": PROCESSOR_ID,
+        "status": "hardcoded",
+        "version": "2.0"
     }
 
-@app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "database": "connected",
-        "ocr": "available" if ocr_available else "unavailable",
-        "storage": {
-            "uploads": os.path.exists(UPLOAD_DIR),
-            "exports": os.path.exists(EXPORT_DIR)
-        }
-    }
-
-@app.post("/upload")
-async def upload_receipt(
-    file: UploadFile = File(...),
-    business: str = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Upload and process a receipt image with REAL Google Document AI OCR
-    """
-    try:
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="No filename provided")
-        
-        # Read file
-        content = await file.read()
-        file_size = len(content)
-        
-        if file_size == 0:
-            raise HTTPException(status_code=400, detail="Empty file")
-        
-        # Save file
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_filename = f"{timestamp}_{file.filename.replace(' ', '_')}"
-        filepath = os.path.join(UPLOAD_DIR, safe_filename)
-        
-        with open(filepath, "wb") as buffer:
-            buffer.write(content)
-        
-        logger.info(f"Processing receipt: {file.filename} ({file_size} bytes)")
-        
-        # === USE REAL OCR ===
-        if not ocr_available or not ocr_service:
-            raise HTTPException(status_code=500, detail="OCR service not available")
-        
-        try:
-            logger.info("Using Google Document AI OCR...")
-            result = await ocr_service.process_receipt(content, file.filename)
-            logger.info(f"OCR result: {result.get('merchant_name', 'Unknown')} - ")
-        except Exception as e:
-            logger.error(f"OCR processing failed: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"OCR failed: {str(e)}")
-        
-        # Parse transaction date
-        transaction_date = datetime.now()
-        if result.get("transaction_date"):
-            try:
-                date_str = result["transaction_date"]
-                for fmt in ["%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"]:
-                    try:
-                        transaction_date = datetime.strptime(date_str, fmt)
-                        break
-                    except:
-                        continue
-            except:
-                transaction_date = datetime.now()
-        
-        # Create receipt record
-        receipt = Receipt(
-            filename=file.filename,
-            file_path=filepath,
-            file_size=file_size,
-            raw_text=result.get("raw_text", ""),
-            parsed_data=result,
-            merchant_name=result.get("merchant_name", "Unknown Merchant"),
-            merchant_address=result.get("merchant_address", ""),
-            transaction_date=transaction_date,
-            receipt_number=result.get("receipt_number", ""),
-            subtotal=result.get("subtotal", 0.0),
-            tax_amount=result.get("tax_amount", 0.0),
-            tax_rate=result.get("tax_rate", 0.0),
-            total_amount=result.get("total_amount", 0.0),
-            currency=result.get("currency", "USD"),
-            category=result.get("category", "other"),
-            business=business or result.get("business", "general"),
-            tags=result.get("tags", []),
-            notes=result.get("notes", ""),
-            line_items=result.get("line_items", []),
-            confidence_score=result.get("confidence", 0.0),
-            status="processed",
-            processed_at=datetime.now(),
-            manually_edited=False,
-            is_exported=False
-        )
-        
-        db.add(receipt)
-        db.commit()
-        db.refresh(receipt)
-        
-        logger.info(f"Receipt {receipt.id} saved - {receipt.merchant_name} ()")
-        
-        return {
-            "success": True,
-            "message": "Receipt processed successfully with OCR",
-            "receipt_id": receipt.id,
-            "confidence_score": receipt.confidence_score,
-            "data": {
-                "id": receipt.id,
-                "merchant": receipt.merchant_name,
-                "total": f"{receipt.total_amount:.2f} {receipt.currency}",
-                "tax": f"{receipt.tax_amount:.2f} {receipt.currency}",
-                "category": receipt.category,
-                "business": receipt.business,
-                "notes": receipt.notes,
-                "date": receipt.transaction_date.strftime("%Y-%m-%d"),
-                "confidence": f"{receipt.confidence_score:.1%}",
-                "line_items_count": len(receipt.line_items) if receipt.line_items else 0,
-                "needs_review": receipt.confidence_score < 0.85
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Upload failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+@app.get("/debug/images")
+async def debug_images():
+    image_dir = "uploads/receipts"
+    if os.path.exists(image_dir):
+        files = os.listdir(image_dir)
+        return {"images": files, "count": len(files)}
+    return {"images": [], "count": 0}
 
 @app.get("/receipts")
-async def get_receipts(
-    business: str = None,
-    category: str = None,
+async def get_receipts(db: Session = Depends(get_db)):
+    try:
+        receipts = db.query(Receipt).order_by(Receipt.created_at.desc()).all()
+        return JSONResponse(content={
+            "receipts": [
+                {
+                    "id": r.id,
+                    "merchant_name": r.merchant_name or 'Unknown Merchant',
+                    "merchant_address": r.merchant_address or '',
+                    "transaction_date": r.transaction_date,
+                    "total_amount": r.total_amount or 0,
+                    "tax_amount": r.tax_amount or 0,
+                    "currency": r.currency or 'USD',
+                    "filename": r.filename or '',
+                    "image_path": r.image_path or None,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "confidence_score": r.confidence_score or 0,
+                    "status": r.status or 'processed',
+                    "category": r.category,
+                    "document_type": r.document_type or 'expense',
+                    "document_number": r.document_number,
+                    "client_name": r.client_name,
+                    "income_amount": r.income_amount or 0,
+                    "expense_amount": r.expense_amount or 0,
+                    "tax_amount_paid": r.tax_amount_paid or 0,
+                    "batch_id": r.batch_id,
+                }
+                for r in receipts
+            ]
+        })
+    except Exception as e:
+        print(f"Error in get_receipts: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/receipts/{receipt_id}")
+async def get_receipt_detail(receipt_id: str, db: Session = Depends(get_db)):
+    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    return JSONResponse(content=jsonable_encoder({
+        "id": receipt.id,
+        "merchant_name": receipt.merchant_name,
+        "merchant_address": receipt.merchant_address,
+        "transaction_date": receipt.transaction_date,
+        "subtotal": receipt.subtotal or 0,
+        "total_amount": receipt.total_amount or 0,
+        "tax_amount": receipt.tax_amount or 0,
+        "currency": receipt.currency or 'USD',
+        "filename": receipt.filename,
+        "image_path": receipt.image_path,
+        "storage_path": receipt.storage_path,
+        "created_at": receipt.created_at,
+        "updated_at": receipt.updated_at,
+        "processed_at": receipt.processed_at,
+        "confidence_score": receipt.confidence_score or 0,
+        "status": receipt.status,
+        "category": receipt.category,
+        "document_type": receipt.document_type,
+        "document_number": receipt.document_number,
+        "client_name": receipt.client_name,
+        "client_address": receipt.client_address,
+        "due_date": receipt.due_date,
+        "tax_type": receipt.tax_type,
+        "tax_year": receipt.tax_year,
+        "income_amount": receipt.income_amount or 0,
+        "expense_amount": receipt.expense_amount or 0,
+        "tax_amount_paid": receipt.tax_amount_paid or 0,
+        "line_items": parse_line_items(receipt.line_items),
+        "parsed_data": parse_json_safe(receipt.parsed_data, {}),
+        "normalized_json": receipt.normalized_json,
+        "error_message": receipt.error_message,
+        "batch_id": receipt.batch_id,
+    }))
+
+@app.put("/receipts/{receipt_id}")
+async def update_receipt(receipt_id: str, request: Request, db: Session = Depends(get_db)):
+    try:
+        data = await request.json()
+        receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+        if not receipt:
+            raise HTTPException(status_code=404, detail="Receipt not found")
+        updateable_fields = [
+            "merchant_name", "merchant_address", "transaction_date",
+            "total_amount", "tax_amount", "currency",
+            "document_type", "document_number", "client_name",
+            "due_date", "tax_type", "tax_year",
+            "income_amount", "expense_amount", "tax_amount_paid",
+            "category", "notes", "status"
+        ]
+        for field in updateable_fields:
+            if field in data:
+                setattr(receipt, field, data[field])
+        receipt.updated_at = datetime.now()
+        receipt.manually_edited = 1
+        db.commit()
+        return JSONResponse(content={"success": True, "message": "Receipt updated"})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.delete("/receipts/{receipt_id}")
+async def delete_receipt(receipt_id: str, db: Session = Depends(get_db)):
+    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    db.delete(receipt)
+    db.commit()
+    return JSONResponse(content={"success": True, "message": "Receipt deleted"})
+
+@app.post("/batches")
+async def create_batch(
+    name: Optional[str] = Query(None),
+    description: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Receipt).filter(Receipt.status == "processed")
-    
-    if business:
-        query = query.filter(Receipt.business == business)
-    if category:
-        query = query.filter(Receipt.category == category)
-    
-    receipts = query.order_by(Receipt.transaction_date.desc()).all()
-    
-    return {
-        "count": len(receipts),
-        "filters": {
-            "business": business,
-            "category": category
-        },
+    try:
+        batch = Batch(
+            id=str(uuid.uuid4()),
+            user_id="demo-user",
+            status=BatchStatus.CREATED,
+            name=name or f"Batch {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            description=description
+        )
+        db.add(batch)
+        db.commit()
+        db.refresh(batch)
+        return JSONResponse(content={
+            "success": True,
+            "batch_id": batch.id,
+            "name": batch.name,
+            "status": batch.status,
+        })
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/batches/{batch_id}/upload")
+async def upload_to_batch(
+    batch_id: str,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        batch = db.query(Batch).filter(Batch.id == batch_id).first()
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        uploaded_receipts = []
+        for file in files:
+            content = await file.read()
+            receipt = Receipt(
+                id=str(uuid.uuid4()),
+                batch_id=batch_id,
+                filename=file.filename,
+                file_size=len(content),
+                status="queued",
+                created_at=datetime.now()
+            )
+            db.add(receipt)
+            db.flush()
+            job_id = TaskQueueService.enqueue_receipt_processing(
+                receipt_id=receipt.id,
+                batch_id=batch_id,
+                file_bytes=content,
+                filename=file.filename
+            )
+            uploaded_receipts.append({
+                "receipt_id": receipt.id,
+                "filename": file.filename,
+                "job_id": job_id,
+                "status": "queued"
+            })
+        batch.total_files = (batch.total_files or 0) + len(files)
+        batch.status = BatchStatus.QUEUED
+        db.commit()
+        return JSONResponse(content={
+            "success": True,
+            "batch_id": batch_id,
+            "uploaded": len(uploaded_receipts),
+            "receipts": uploaded_receipts
+        })
+    except Exception as e:
+        db.rollback()
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/batches/{batch_id}")
+async def get_batch(batch_id: str, db: Session = Depends(get_db)):
+    batch = db.query(Batch).filter(Batch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    progress = TaskQueueService.get_batch_progress(batch_id, db)
+    return JSONResponse(content=jsonable_encoder({
+        "id": batch.id,
+        "name": batch.name,
+        "status": batch.status,
+        "total_files": batch.total_files,
+        "processed_files": batch.processed_files,
+        "failed_files": batch.failed_files,
+        "progress_percent": batch.progress_percent,
+        "total_amount": batch.total_amount,
+        "avg_confidence": batch.avg_confidence,
+        "progress": progress
+    }))
+
+@app.get("/batches/{batch_id}/receipts")
+async def get_batch_receipts(batch_id: str, db: Session = Depends(get_db)):
+    batch = db.query(Batch).filter(Batch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    receipts = db.query(Receipt).filter(Receipt.batch_id == batch_id).all()
+    return JSONResponse(content={
+        "batch_id": batch_id,
         "receipts": [
             {
                 "id": r.id,
+                "filename": r.filename,
+                "status": r.status,
                 "merchant": r.merchant_name,
                 "total": r.total_amount,
-                "tax": r.tax_amount,
                 "category": r.category,
-                "business": r.business,
-                "notes": r.notes,
-                "date": r.transaction_date.strftime("%Y-%m-%d"),
-                "status": r.status,
                 "confidence": r.confidence_score,
-                "needs_review": r.confidence_score < 0.85
+                "error": r.error_message,
+                "processed_at": r.processed_at.isoformat() if r.processed_at else None
             }
             for r in receipts
         ]
-    }
+    })
 
-@app.get("/export/csv")
-async def export_to_csv(
-    business: str = None,
-    db: Session = Depends(get_db)
-):
-    try:
-        import pandas as pd
-        
-        query = db.query(Receipt).filter(Receipt.status == "processed")
-        if business:
-            query = query.filter(Receipt.business == business)
-        
-        receipts = query.all()
-        
-        if not receipts:
-            raise HTTPException(status_code=404, detail="No receipts to export")
-        
-        data = []
-        for receipt in receipts:
-            data.append({
-                "Merchant": receipt.merchant_name,
-                "Date": receipt.transaction_date.strftime("%Y-%m-%d"),
-                "Total": receipt.total_amount,
-                "Tax": receipt.tax_amount,
-                "Category": receipt.category,
-                "Business": receipt.business,
-                "Notes": receipt.notes,
-                "Confidence": f"{receipt.confidence_score:.1%}"
-            })
-        
-        df = pd.DataFrame(data)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"receipts_export_{timestamp}.csv"
-        filepath = os.path.join(EXPORT_DIR, filename)
-        
-        df.to_csv(filepath, index=False)
-        
-        return FileResponse(
-            path=filepath,
-            filename=filename,
-            media_type="text/csv"
+@app.post("/upload")
+async def upload_receipt(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not imagetotable_client:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "ImageToTable.ai client not configured"}
         )
-        
-    except Exception as e:
-        logger.error(f"CSV export failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"CSV export failed: {str(e)}")
-
-@app.get("/export/excel")
-async def export_to_excel(
-    business: str = None,
-    db: Session = Depends(get_db)
-):
     try:
-        import pandas as pd
-        
-        query = db.query(Receipt).filter(Receipt.status == "processed")
-        if business:
-            query = query.filter(Receipt.business == business)
-        
-        receipts = query.all()
-        
-        if not receipts:
-            raise HTTPException(status_code=404, detail="No receipts to export")
-        
-        data = []
-        for receipt in receipts:
-            data.append({
-                "Merchant": receipt.merchant_name,
-                "Date": receipt.transaction_date.strftime("%Y-%m-%d"),
-                "Total": receipt.total_amount,
-                "Tax": receipt.tax_amount,
-                "Category": receipt.category,
-                "Business": receipt.business,
-                "Notes": receipt.notes,
-                "Confidence": f"{receipt.confidence_score:.1%}"
-            })
-        
-        df = pd.DataFrame(data)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"receipts_export_{timestamp}.xlsx"
-        filepath = os.path.join(EXPORT_DIR, filename)
-        
-        df.to_excel(filepath, index=False, sheet_name="Receipts")
-        
-        return FileResponse(
-            path=filepath,
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        content = await file.read()
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            results = imagetotable_client.upload_and_process(tmp_path)
+        finally:
+            os.unlink(tmp_path)
+        documents = results.get("documents", [])
+        if not documents:
+            return JSONResponse(status_code=400, content={"error": "No data extracted"})
+        doc = documents[0]
+        receipt_id = str(uuid.uuid4())
+        current_time = datetime.now()
+        receipt = Receipt(
+            id=receipt_id,
+            merchant_name=doc.get("merchant", "Unknown"),
+            transaction_date=doc.get("date", ""),
+            subtotal=doc.get("subtotal", 0),
+            tax_amount=doc.get("tax", 0),
+            total_amount=doc.get("total", 0),
+            line_items=json.dumps(doc.get("line_items", [])),
+            status="completed",
+            created_at=current_time,
+            processed_at=current_time
         )
-        
+        db.add(receipt)
+        db.commit()
+        return JSONResponse(content={
+            "success": True,
+            "receipt_id": receipt_id,
+            "data": doc
+        })
     except Exception as e:
-        logger.error(f"Excel export failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Excel export failed: {str(e)}")
+        db.rollback()
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("READ RECEIPTS - REAL OCR VERSION 3.0")
-    print("=" * 60)
-    print(f"Database: SQLite (receipts.db)")
-    print(f"Uploads: {UPLOAD_DIR}")
-    print(f"Exports: {EXPORT_DIR}")
-    print(f"OCR Provider: Google Document AI" if ocr_available else "OCR Provider: Unavailable")
-    print("Server: http://localhost:8000")
-    print("Docs: http://localhost:8000/docs")
-    print("=" * 60)
-    print("")
-    print("Ready to process real receipts with OCR!")
-    print("")
-    print("Press Ctrl+C to stop")
-    print("=" * 60)
-    
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-        reload=False
+@app.get("/export")
+async def export_receipts(db: Session = Depends(get_db)):
+    receipts = db.query(Receipt).order_by(Receipt.created_at.desc()).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'Merchant', 'Date', 'Amount', 'Currency',
+        'Document Type', 'Document #', 'Client Name', 'Due Date',
+        'Tax Type', 'Tax Year', 'Income', 'Expense', 'Tax Paid',
+        'Category', 'Confidence', 'Status'
+    ])
+    for r in receipts:
+        writer.writerow([
+            r.merchant_name or 'Unknown',
+            r.transaction_date or 'N/A',
+            r.total_amount or 0,
+            r.currency or 'USD',
+            r.document_type or 'expense',
+            r.document_number or '',
+            r.client_name or '',
+            r.due_date or '',
+            r.tax_type or '',
+            r.tax_year or '',
+            r.income_amount or 0,
+            r.expense_amount or 0,
+            r.tax_amount_paid or 0,
+            r.category or 'Uncategorized',
+            f"{(r.confidence_score or 0) * 100:.0f}%",
+            r.status or 'processed'
+        ])
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=receipts_export.csv"}
     )
 
+@app.post("/reports/generate")
+async def generate_report(request: Request, db: Session = Depends(get_db)):
+    filters = await request.json()
+    receipts = db.query(Receipt).all()
+    summary = {
+        'total_receipts': len(receipts),
+        'total_income': sum(r.income_amount or 0 for r in receipts if r.document_type == 'invoice'),
+        'total_expenses': sum(r.expense_amount or 0 for r in receipts if r.document_type == 'expense'),
+        'total_tax': sum(r.tax_amount_paid or 0 for r in receipts if r.document_type == 'tax'),
+    }
+    summary['net_income'] = summary['total_income'] - summary['total_expenses']
+    return JSONResponse(content={'summary': summary, 'receipts': []})
+
+if __name__ == '__main__':
+    print("[START] Starting ReadReceipts API v2.0")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
