@@ -41,6 +41,34 @@ try:
 except Exception as e:
     print(f"Migration warning: {e}")
 
+
+def parse_line_items(raw):
+    """Handle line_items that may be JSON, plain string, or None."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if stripped.startswith("[") or stripped.startswith("{"):
+            try:
+                return json.loads(stripped)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return [stripped]
+    return []
+
+
+def parse_json_safe(raw, default):
+    """Safely parse a JSON string field, returning default on failure."""
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return default
+
+
 app = FastAPI(title="ReadReceipts API", version="2.0")
 
 os.makedirs("uploads/receipts", exist_ok=True)
@@ -132,8 +160,8 @@ async def get_receipt_detail(receipt_id: str, db: Session = Depends(get_db)):
         "status": receipt.status,
         "category": receipt.category,
         "document_type": receipt.document_type,
-        "line_items": json.loads(receipt.line_items) if receipt.line_items else [],
-        "parsed_data": json.loads(receipt.parsed_data) if receipt.parsed_data else {},
+        "line_items": parse_line_items(receipt.line_items),
+        "parsed_data": parse_json_safe(receipt.parsed_data, {}),
         "batch_id": receipt.batch_id,
     })
 
