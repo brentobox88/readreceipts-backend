@@ -140,11 +140,19 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
 
         # Map Qwen output -> Receipt model
         receipt.merchant_name = extracted.get("merchant_name") or "Unknown"
+        receipt.merchant_name_en = extracted.get("merchant_name_en") or receipt.merchant_name
         receipt.transaction_date = extracted.get("transaction_date") or ""
         receipt.subtotal = safe_float(extracted.get("subtotal"))
         receipt.tax_amount = safe_float(extracted.get("tax_amount"))
         receipt.total_amount = safe_float(extracted.get("total_amount"))
+        receipt.currency = (extracted.get("currency") or "USD").upper()
+
+        # line_items is legacy (v5 and earlier wrote item names here).
+        # v6 writes line_items_count instead.
         receipt.line_items = extracted.get("line_items") or ""
+        count_val = extracted.get("line_items_count")
+        receipt.line_items_count = int(count_val) if count_val is not None else None
+
         receipt.category = extracted.get("category", "Uncategorized")
         receipt.document_type = extracted.get("document_type", "expense")
         receipt.normalized_json = extracted

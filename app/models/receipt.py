@@ -1,4 +1,4 @@
-﻿# app/models/receipt.py
+# app/models/receipt.py
 from sqlalchemy import Column, String, DateTime, Integer, Float, Text, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -30,6 +30,7 @@ class Receipt(Base):
     total_amount = Column(Float, default=0.0)
     currency = Column(String(10), default='USD')
     line_items = Column(Text, nullable=True)
+    line_items_count = Column(Integer, nullable=True)
     parsed_data = Column(Text, nullable=True)
     
     # Classification

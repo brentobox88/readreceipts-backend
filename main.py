@@ -140,6 +140,7 @@ def serialize_receipt_summary(r: Receipt):
     return {
         "id": r.id,
         "merchant_name": r.merchant_name or 'Unknown Merchant',
+        "merchant_name_en": r.merchant_name_en or r.merchant_name,
         "merchant_address": r.merchant_address or '',
         "transaction_date": r.transaction_date,
         "total_amount": r.total_amount or 0,
@@ -251,6 +252,7 @@ async def get_receipt_detail(receipt_id: str, db: Session = Depends(get_db)):
         "expense_amount": receipt.expense_amount or 0,
         "tax_amount_paid": receipt.tax_amount_paid or 0,
         "line_items": parse_line_items(receipt.line_items),
+        "line_items_count": receipt.line_items_count,
         "parsed_data": parse_json_safe(receipt.parsed_data, {}),
         "normalized_json": receipt.normalized_json,
         "error_message": receipt.error_message,

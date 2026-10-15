@@ -1,4 +1,4 @@
-﻿# migrate_live_db.py
+# migrate_live_db.py
 import os
 
 
@@ -56,6 +56,8 @@ def migrate():
         ("tax_type", "TEXT"),
         ("tax_year", "TEXT"),
         ("notes", "TEXT"),
+        ('merchant_name_en', 'TEXT'),
+        ('line_items_count', 'INTEGER'),
     ]
 
     for col_name, col_type in new_columns:
