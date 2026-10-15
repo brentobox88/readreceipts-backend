@@ -217,6 +217,39 @@ async def delete_receipt(receipt_id: str, db: Session = Depends(get_db)):
     db.commit()
     return JSONResponse(content={"success": True, "message": "Receipt deleted"})
 
+@app.post("/receipts/{receipt_id}/retry")
+async def retry_receipt(receipt_id: str, db: Session = Depends(get_db)):
+    """
+    Reset a failed receipt so it can be re-uploaded and reprocessed.
+
+    The worker does not persist the raw image bytes for failed receipts,
+    so this endpoint resets the receipt to 'queued' status and clears
+    the error message. The user then re-uploads the image via
+    POST /batches/{id}/upload.
+    """
+    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    if receipt.status != "failed":
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Only failed receipts can be retried. Current status: {receipt.status}"}
+        )
+
+    receipt.status = "queued"
+    receipt.error_message = None
+    receipt.confidence_score = 0
+    receipt.updated_at = datetime.now()
+    db.commit()
+
+    return JSONResponse(content={
+        "success": True,
+        "receipt_id": receipt_id,
+        "message": "Receipt reset. Please re-upload the image to process it again.",
+        "batch_id": receipt.batch_id,
+    })
+
 @app.post("/batches")
 async def create_batch(
     name: Optional[str] = Query(None),
