@@ -23,6 +23,7 @@ class Receipt(Base):
     
     # Extracted data
     merchant_name = Column(String(255), nullable=True)
+    merchant_name_en = Column(String(255), nullable=True)
     merchant_address = Column(String(500), nullable=True)
     transaction_date = Column(String(50), nullable=True)
     subtotal = Column(Float, default=0.0)
