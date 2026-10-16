@@ -101,19 +101,15 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
             os.fsync(tmp.fileno())
             tmp_path = tmp.name
 
-                # Persist a copy for future reprocessing
+        
+                # Persist the raw bytes to Postgres so both API and worker can access them
         try:
-            uploads_dir = "uploads/receipts"
-            os.makedirs(uploads_dir, exist_ok=True)
-            storage_path = os.path.join(uploads_dir, f"{receipt_id}.bin")
-            with open(storage_path, "wb") as f:
-                f.write(file_bytes)
-            receipt.storage_path = storage_path
+            receipt.file_bytes = file_bytes
             db.commit()
-            logger.info(f"Saved original to {storage_path}")
+            logger.info(f"Saved original bytes to Postgres for receipt {receipt_id}")
         except Exception as e:
-            logger.warning(f"Could not save original file: {e}")
-
+            db.rollback()
+            logger.warning(f"Could not save original bytes: {e}")
         # Convert + resize + compress to JPEG for Qwen
         jpg_path = tmp_path + ".jpg"
         try:

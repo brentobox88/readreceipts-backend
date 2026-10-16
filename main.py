@@ -330,7 +330,7 @@ async def reprocess_receipt(receipt_id: str, db: Session = Depends(get_db)):
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
 
-    if not receipt.storage_path or not os.path.exists(receipt.storage_path):
+    if not receipt.file_bytes:
         return JSONResponse(
             status_code=400,
             content={"error": "Original file not available for reprocessing"}
@@ -343,8 +343,7 @@ async def reprocess_receipt(receipt_id: str, db: Session = Depends(get_db)):
         )
 
     try:
-        with open(receipt.storage_path, "rb") as f:
-            file_bytes = f.read()
+        file_bytes = bytes(receipt.file_bytes)
 
         receipt.status = "queued"
         receipt.error_message = None
@@ -374,13 +373,13 @@ async def reprocess_all(db: Session = Depends(get_db)):
     Re-queue every receipt that has a saved original file.
     Useful when you change the OCR prompt or model.
     """
-    receipts = db.query(Receipt).filter(Receipt.storage_path.isnot(None)).all()
+    receipts = db.query(Receipt).filter(Receipt.file_bytes.isnot(None)).all()
     queued = 0
     skipped = 0
     errors = []
 
     for r in receipts:
-        if not r.storage_path or not os.path.exists(r.storage_path):
+        if not r.file_bytes:
             skipped += 1
             continue
         if not r.batch_id:
@@ -388,8 +387,7 @@ async def reprocess_all(db: Session = Depends(get_db)):
             continue
 
         try:
-            with open(r.storage_path, "rb") as f:
-                file_bytes = f.read()
+            file_bytes = bytes(r.file_bytes)
 
             r.status = "queued"
             r.error_message = None

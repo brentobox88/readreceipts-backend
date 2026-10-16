@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
 from app.database import Base
+from sqlalchemy import Column, String, DateTime, Integer, Float, Text, ForeignKey, JSON, Boolean, LargeBinary
 
 class Receipt(Base):
     __tablename__ = "receipts"
@@ -19,6 +20,7 @@ class Receipt(Base):
     file_path = Column(String(500), nullable=True)
     image_path = Column(String(500), nullable=True)
     storage_path = Column(String(500), nullable=True)
+    file_bytes = Column(LargeBinary, nullable=True)
     file_size = Column(Integer, nullable=True)
     
     # Extracted data

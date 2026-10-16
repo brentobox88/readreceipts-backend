@@ -19,6 +19,7 @@ NEW_COLUMNS = [
     ("receipts", "notes", "TEXT"),
     ("receipts", "merchant_name_en", "TEXT"),
     ("receipts", "line_items_count", "INTEGER"),
+    ("receipts", "file_bytes", "BYTEA"),
 ]
 
 
