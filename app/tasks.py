@@ -101,6 +101,19 @@ def process_receipt_task(receipt_id, batch_id, file_bytes, filename):
             os.fsync(tmp.fileno())
             tmp_path = tmp.name
 
+                # Persist a copy for future reprocessing
+        try:
+            uploads_dir = "uploads/receipts"
+            os.makedirs(uploads_dir, exist_ok=True)
+            storage_path = os.path.join(uploads_dir, f"{receipt_id}.bin")
+            with open(storage_path, "wb") as f:
+                f.write(file_bytes)
+            receipt.storage_path = storage_path
+            db.commit()
+            logger.info(f"Saved original to {storage_path}")
+        except Exception as e:
+            logger.warning(f"Could not save original file: {e}")
+
         # Convert + resize + compress to JPEG for Qwen
         jpg_path = tmp_path + ".jpg"
         try:

@@ -320,6 +320,99 @@ async def retry_receipt(receipt_id: str, db: Session = Depends(get_db)):
         "batch_id": receipt.batch_id,
     })
 
+@app.post("/receipts/{receipt_id}/reprocess")
+async def reprocess_receipt(receipt_id: str, db: Session = Depends(get_db)):
+    """
+    Re-run OCR on a receipt using its saved original file.
+    Requires that the file was persisted during the first processing run.
+    """
+    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    if not receipt.storage_path or not os.path.exists(receipt.storage_path):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Original file not available for reprocessing"}
+        )
+
+    if not receipt.batch_id:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Receipt is not associated with a batch"}
+        )
+
+    try:
+        with open(receipt.storage_path, "rb") as f:
+            file_bytes = f.read()
+
+        receipt.status = "queued"
+        receipt.error_message = None
+        db.commit()
+
+        job_id = TaskQueueService.enqueue_receipt_processing(
+            receipt_id=receipt.id,
+            batch_id=receipt.batch_id,
+            file_bytes=file_bytes,
+            filename=receipt.filename or "receipt.jpg"
+        )
+
+        return JSONResponse(content={
+            "success": True,
+            "receipt_id": receipt_id,
+            "job_id": job_id,
+            "message": "Receipt re-queued for processing"
+        })
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/admin/reprocess-all")
+async def reprocess_all(db: Session = Depends(get_db)):
+    """
+    Re-queue every receipt that has a saved original file.
+    Useful when you change the OCR prompt or model.
+    """
+    receipts = db.query(Receipt).filter(Receipt.storage_path.isnot(None)).all()
+    queued = 0
+    skipped = 0
+    errors = []
+
+    for r in receipts:
+        if not r.storage_path or not os.path.exists(r.storage_path):
+            skipped += 1
+            continue
+        if not r.batch_id:
+            skipped += 1
+            continue
+
+        try:
+            with open(r.storage_path, "rb") as f:
+                file_bytes = f.read()
+
+            r.status = "queued"
+            r.error_message = None
+            db.commit()
+
+            TaskQueueService.enqueue_receipt_processing(
+                receipt_id=r.id,
+                batch_id=r.batch_id,
+                file_bytes=file_bytes,
+                filename=r.filename or "receipt.jpg"
+            )
+            queued += 1
+        except Exception as e:
+            errors.append(f"{r.id}: {e}")
+
+    return JSONResponse(content={
+        "success": True,
+        "queued": queued,
+        "skipped": skipped,
+        "errors": errors,
+        "total_matched": len(receipts)
+    })
+
 @app.post("/batches")
 async def create_batch(
     name: Optional[str] = Query(None),
