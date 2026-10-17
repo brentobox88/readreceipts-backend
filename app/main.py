@@ -108,9 +108,9 @@ def apply_receipt_filters(
     end_dt = parse_date_param(end_date, end_of_day=True)
 
     if start_dt:
-        query = query.filter(Receipt.created_at >= start_dt)
+        query = query.filter(Receipt.transaction_date >= start_date)
     if end_dt:
-        query = query.filter(Receipt.created_at <= end_dt)
+        query = query.filter(Receipt.transaction_date <= end_date)
     if status:
         query = query.filter(Receipt.status == status)
     if batch_id:
@@ -124,7 +124,7 @@ def apply_receipt_filters(
 def apply_sort(query, sort: Optional[str] = None):
     """Apply sorting to a SQLAlchemy query on Receipt."""
     if sort == "date_asc":
-        return query.order_by(Receipt.created_at.asc())
+        return query.order_by(Receipt.transaction_date.asc())
     if sort == "amount_desc":
         return query.order_by(Receipt.total_amount.desc())
     if sort == "amount_asc":
@@ -132,7 +132,7 @@ def apply_sort(query, sort: Optional[str] = None):
     if sort == "merchant_asc":
         return query.order_by(Receipt.merchant_name.asc())
     # default: newest first
-    return query.order_by(Receipt.created_at.desc())
+    return query.order_by(Receipt.transaction_date.desc())
 
 
 def serialize_receipt_summary(r: Receipt):
