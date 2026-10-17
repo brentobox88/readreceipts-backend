@@ -102,6 +102,7 @@ def apply_receipt_filters(
     status: Optional[str] = None,
     batch_id: Optional[str] = None,
     category: Optional[str] = None,
+    currency: Optional[str] = None,
 ):
     """Apply filter conditions to a SQLAlchemy query. All params are optional."""
     start_dt = parse_date_param(start_date, end_of_day=False)
@@ -117,9 +118,10 @@ def apply_receipt_filters(
         query = query.filter(Receipt.batch_id == batch_id)
     if category:
         query = query.filter(Receipt.category == category)
+    if currency:
+        query = query.filter(Receipt.currency == currency)
 
     return query
-
 
 def apply_sort(query, sort: Optional[str] = None):
     """Apply sorting to a SQLAlchemy query on Receipt."""
@@ -190,12 +192,13 @@ async def get_receipts(
     status: Optional[str] = Query(None),
     batch_id: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    currency: Optional[str] = Query(None),
     sort: Optional[str] = Query(None, description="date_desc|date_asc|amount_desc|amount_asc|merchant_asc"),
     db: Session = Depends(get_db)
 ):
     try:
         query = db.query(Receipt)
-        query = apply_receipt_filters(query, start_date, end_date, status, batch_id, category)
+        query = apply_receipt_filters(query, start_date, end_date, status, batch_id, category, currency)
         query = apply_sort(query, sort)
         receipts = query.all()
 
@@ -208,6 +211,7 @@ async def get_receipts(
                 "status": status,
                 "batch_id": batch_id,
                 "category": category,
+                "currency": currency,
                 "sort": sort or "date_desc",
             },
         })
@@ -591,7 +595,7 @@ async def export_receipts(
     db: Session = Depends(get_db)
 ):
     query = db.query(Receipt)
-    query = apply_receipt_filters(query, start_date, end_date, status, batch_id, category)
+    query = apply_receipt_filters(query, start_date, end_date, status, batch_id, category, currency)
     query = apply_sort(query, sort)
     receipts = query.all()
 
@@ -605,6 +609,7 @@ async def export_receipts(
                 "status": status,
                 "batch_id": batch_id,
                 "category": category,
+                "currency": currency,
                 "sort": sort or "date_desc",
             },
             "receipts": [
