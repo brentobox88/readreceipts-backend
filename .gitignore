@@ -24,3 +24,7 @@ venv/
 *.bak
 
 *.bak
+
+*service-account*.json
+*firebase-*.json
+*adminsdk*.json
