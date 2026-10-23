@@ -1,6 +1,13 @@
-﻿import csv
+"""
+Run the eval: for each receipt in test_set.csv, call Qwen and compare
+against ground truth in the CSV.
+
+Run: python -m evaluation.run_eval
+"""
+import csv
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -10,11 +17,40 @@ from evaluation.metrics import (
     FieldResult, normalize_amount, normalize_date, normalize_text
 )
 
+FIXTURES = Path(__file__).parent / "fixtures"
+TEST_SET = Path(__file__).parent / "test_set.csv"
+LAST_RUN = Path(__file__).parent / "last_run.json"
 
-def extract_one(image_bytes: bytes) -> dict:
-    """Synchronous Qwen call, matching production preprocessing."""
+
+def _safe_num(value):
+    """Parse '168,000' or '$168.00' or 168.0 to float."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    cleaned = re.sub(r"[^0-9.\-]", "", str(value))
+    try:
+        return float(cleaned) if cleaned else 0.0
+    except ValueError:
+        return 0.0
+
+
+def _get(d, *keys):
+    """Return the first non-None value from candidate keys."""
+    for k in keys:
+        v = d.get(k)
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def extract_one(image_bytes):
+    """Synchronous Qwen call, production-equivalent preprocessing."""
     from qwen_client import QwenClient
     from PIL import Image
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
         tmp.write(image_bytes)
@@ -36,10 +72,8 @@ def extract_one(image_bytes: bytes) -> dict:
 
 
 def run():
-    fixture_dir = Path(__file__).parent / "fixtures"
-    test_set = Path(__file__).parent / "test_set.csv"
-    if not test_set.exists():
-        print(f"ERROR: {test_set} not found.")
+    if not TEST_SET.exists():
+        print(f"ERROR: {TEST_SET} not found")
         return
 
     results = {
@@ -48,35 +82,53 @@ def run():
         "date": FieldResult("date"),
         "tax": FieldResult("tax"),
     }
-    rows = list(csv.DictReader(test_set.open(encoding="utf-8")))
+    rows = list(csv.DictReader(TEST_SET.open(encoding="utf-8")))
+    if not rows:
+        print("ERROR: test_set.csv is empty")
+        return
 
     for i, row in enumerate(rows, 1):
-        img_path = fixture_dir / row["image_file"]
+        img_path = FIXTURES / row["image_file"]
         if not img_path.exists():
-            print(f"[{i}/{len(rows)}] SKIP missing {img_path}")
+            print(f"[{i}/{len(rows)}] SKIP missing {row['image_file']}")
             continue
         print(f"[{i}/{len(rows)}] {row['image_file']}")
+
         try:
             ex = extract_one(img_path.read_bytes())
         except Exception as e:
-            print(f"    ERROR: {e}")
+            print(f"    QWEN ERROR: {e}")
             continue
 
-        exp = normalize_text(row["expected_merchant"])
-        got = normalize_text(ex.get("merchant_name") or ex.get("merchant"))
+        # Qwen uses snake_case field names that match the DB model
+        got_merchant = _get(ex, "merchant_name", "merchant")
+        got_total = _get(ex, "total_amount", "total")
+        got_date = _get(ex, "transaction_date", "date")
+        got_tax = _get(ex, "tax_amount", "tax")
+
+        # merchant: substring match
+        exp_m = normalize_text(row.get("expected_merchant"))
+        got_m = normalize_text(got_merchant)
         results["merchant"].total += 1
-        if exp and got and exp in got:
+        if exp_m and got_m and exp_m in got_m:
             results["merchant"].correct += 1
 
-        for field, qwen_key in (("total", "total_amount"), ("tax", "tax_amount")):
-            exp_v = normalize_amount(row[f"expected_{field}"])
-            got_v = normalize_amount(ex.get(qwen_key) or ex.get(field))
-            results[field].total += 1
-            if exp_v is not None and got_v is not None and abs(exp_v - got_v) < 0.01:
-                results[field].correct += 1
+        # total, tax: exact after normalization
+        exp_total = normalize_amount(row.get("expected_total"))
+        got_total_v = normalize_amount(_safe_num(got_total))
+        results["total"].total += 1
+        if exp_total is not None and got_total_v is not None and abs(exp_total - got_total_v) < 0.01:
+            results["total"].correct += 1
 
-        exp_d = normalize_date(row["expected_date"])
-        got_d = normalize_date(ex.get("transaction_date") or ex.get("date"))
+        exp_tax = normalize_amount(row.get("expected_tax"))
+        got_tax_v = normalize_amount(_safe_num(got_tax))
+        results["tax"].total += 1
+        if exp_tax is not None and got_tax_v is not None and abs(exp_tax - got_tax_v) < 0.01:
+            results["tax"].correct += 1
+
+        # date: exact after normalization
+        exp_d = normalize_date(row.get("expected_date"))
+        got_d = normalize_date(got_date)
         results["date"].total += 1
         if exp_d and got_d and exp_d == got_d:
             results["date"].correct += 1
@@ -86,12 +138,11 @@ def run():
     for name, r in results.items():
         print(f"{name:<12}{r.correct:<10}{r.total:<10}{r.accuracy:.1%}")
 
-    out = Path(__file__).parent / "last_run.json"
-    out.write_text(json.dumps(
+    LAST_RUN.write_text(json.dumps(
         {n: {"correct": r.correct, "total": r.total, "accuracy": r.accuracy}
          for n, r in results.items()}, indent=2
     ), encoding="utf-8")
-    print(f"\nSaved: {out}")
+    print(f"\nSaved: {LAST_RUN}")
 
 
 if __name__ == "__main__":
