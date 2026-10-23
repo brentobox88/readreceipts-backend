@@ -40,3 +40,6 @@ venv/
 backups/
 evaluation/fixtures/*.jpg
 evaluation/*.png
+test.jpg
+test_*.jpg
+*.tmp.jpg
