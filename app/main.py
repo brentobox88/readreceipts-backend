@@ -15,6 +15,9 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import uvicorn
 
+from pillow_heif import register_heif_opener
+register_heif_opener()
+
 from app.database import get_db, engine, Base
 from app.models.batch import Batch, BatchStatus
 from app.models.receipt import Receipt
