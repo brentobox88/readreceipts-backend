@@ -298,6 +298,36 @@ async def delete_receipt(receipt_id: str, db: Session = Depends(get_db)):
     db.commit()
     return JSONResponse(content={"success": True, "message": "Receipt deleted"})
 
+@app.get('/receipts/{receipt_id}/image')
+async def get_receipt_image(receipt_id: str, db: Session = Depends(get_db)):
+    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(status_code=404, detail='Receipt not found')
+
+    if receipt.file_bytes:
+        return Response(
+            content=bytes(receipt.file_bytes),
+            media_type='image/jpeg',
+            headers={'Cache-Control': 'public, max-age=86400'},
+        )
+
+    for path in (
+        receipt.image_path,
+        receipt.storage_path,
+        f'uploads/receipts/{receipt.filename}' if receipt.filename else None,
+    ):
+        if path:
+            import os as _os
+            if _os.path.exists(path):
+                with open(path, 'rb') as fh:
+                    return Response(
+                        content=fh.read(),
+                        media_type='image/jpeg',
+                        headers={'Cache-Control': 'public, max-age=86400'},
+                    )
+
+    raise HTTPException(status_code=404, detail='Image not available for this receipt')
+
 @app.post("/receipts/{receipt_id}/retry")
 async def retry_receipt(receipt_id: str, db: Session = Depends(get_db)):
     """Reset a failed receipt so it can be re-uploaded and reprocessed."""
