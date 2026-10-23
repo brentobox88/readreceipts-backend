@@ -32,3 +32,11 @@ venv/
 .env.backup_*
 .env.bak_*
 .env.*.bak
+# Never commit secrets or their backups
+.env.*
+!.env.example
+*.backup_*
+*.bak_*
+backups/
+evaluation/fixtures/*.jpg
+evaluation/*.png
