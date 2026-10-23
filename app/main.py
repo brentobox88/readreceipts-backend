@@ -300,33 +300,53 @@ async def delete_receipt(receipt_id: str, db: Session = Depends(get_db)):
 
 @app.get('/receipts/{receipt_id}/image')
 async def get_receipt_image(receipt_id: str, db: Session = Depends(get_db)):
+    """Serve the receipt image as JPEG. Transcodes HEIC/PNG/etc. via PIL."""
+    from PIL import Image
+    from io import BytesIO
+
     receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
     if not receipt:
         raise HTTPException(status_code=404, detail='Receipt not found')
 
+    raw_bytes = None
     if receipt.file_bytes:
-        return Response(
-            content=bytes(receipt.file_bytes),
-            media_type='image/jpeg',
-            headers={'Cache-Control': 'public, max-age=86400'},
-        )
-
-    for path in (
-        receipt.image_path,
-        receipt.storage_path,
-        f'uploads/receipts/{receipt.filename}' if receipt.filename else None,
-    ):
-        if path:
-            import os as _os
-            if _os.path.exists(path):
+        raw_bytes = bytes(receipt.file_bytes)
+    else:
+        for path in (
+            receipt.image_path,
+            receipt.storage_path,
+            f'uploads/receipts/{receipt.filename}' if receipt.filename else None,
+        ):
+            if path and os.path.exists(path):
                 with open(path, 'rb') as fh:
-                    return Response(
-                        content=fh.read(),
-                        media_type='image/jpeg',
-                        headers={'Cache-Control': 'public, max-age=86400'},
-                    )
+                    raw_bytes = fh.read()
+                break
 
-    raise HTTPException(status_code=404, detail='Image not available for this receipt')
+    if not raw_bytes:
+        raise HTTPException(status_code=404, detail='Image not available for this receipt')
+
+    # Transcode to JPEG (handles HEIC, PNG, WebP, etc.)
+    try:
+        img = Image.open(BytesIO(raw_bytes))
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        max_dim = 2000
+        w, h = img.size
+        if max(w, h) > max_dim:
+            scale = max_dim / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        out = BytesIO()
+        img.save(out, 'JPEG', quality=85, optimize=True)
+        jpeg_bytes = out.getvalue()
+    except Exception as e:
+        # Not a recognized image — return raw with the best-guess content type
+        raise HTTPException(status_code=415, detail=f'Cannot decode image: {e}')
+
+    return Response(
+        content=jpeg_bytes,
+        media_type='image/jpeg',
+        headers={'Cache-Control': 'public, max-age=86400'},
+    )
 
 @app.post("/receipts/{receipt_id}/retry")
 async def retry_receipt(receipt_id: str, db: Session = Depends(get_db)):
