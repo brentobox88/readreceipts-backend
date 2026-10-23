@@ -1,0 +1,22 @@
+{
+  "merchant": {
+    "correct": 8,
+    "total": 9,
+    "accuracy": 0.8888888888888888
+  },
+  "total": {
+    "correct": 9,
+    "total": 9,
+    "accuracy": 1.0
+  },
+  "date": {
+    "correct": 7,
+    "total": 9,
+    "accuracy": 0.7777777777777778
+  },
+  "tax": {
+    "correct": 9,
+    "total": 9,
+    "accuracy": 1.0
+  }
+}

@@ -43,3 +43,6 @@ evaluation/*.png
 test.jpg
 test_*.jpg
 *.tmp.jpg
+
+# Allow eval baseline JSON snapshots (last_run.json stays ignored)
+!evaluation/baseline_*.json
