@@ -1,0 +1,5 @@
+image_file,expected_merchant,expected_total,expected_date,expected_tax,db_total,db_merchant,agreement
+845fdb22-1d17-44ea-aa82-c7cc805a1559.jpg,Pho Fusion,76.52,2026-10-16,7.86,76.58,Pho Fusion,no
+b075b5dc-e66b-400e-966c-2ca34b124ba9.jpg,Star Cafe 1B Int Arr LS,168000.0,2026-09-08,12444.0,155556.0,Star Cafe,no
+0e649a80-3429-4750-b94b-2dddb4f6de1a.jpg,Sizzle Korean BBQ,117.91,2026-08-28,5.32,103.22,Sizzle Korean BBQ,no
+c5a59bcc-5dfa-4fd3-9f4d-e97443bc61c7.jpg,Sizzle Korean BBQ,117.91,2026-08-28,5.32,103.22,Sizzle Korean BBQ,no

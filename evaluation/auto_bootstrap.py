@@ -50,6 +50,22 @@ def fetch_image(receipt_id):
     return None
 
 
+
+
+def _safe_num(value):
+    """Parse number from string like '168,000' or '\.00' or 168.0."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    import re
+    # Remove currency symbols, spaces, thousand separators, keep digits/dot/minus
+    cleaned = re.sub(r'[^0-9.\-]', '', str(value))
+    try:
+        return float(cleaned) if cleaned else 0.0
+    except ValueError:
+        return 0.0
+
 def judge_with_openai(image_bytes):
     from openai import OpenAI
     client = OpenAI()
@@ -95,8 +111,8 @@ def run():
                 print(f"JUDGE ERROR: {err[:200]}")
             continue
 
-        db_total = round(float(r.get("total_amount") or 0), 2)
-        jd_total = round(float(judge.get("total_amount") or 0), 2)
+        db_total = round(_safe_num(r.get("total_amount")), 2)
+        jd_total = round(_safe_num(judge.get("total_amount")), 2)
         match = abs(db_total - jd_total) < 0.01
 
         row = {
@@ -104,7 +120,7 @@ def run():
             "expected_merchant": judge.get("merchant_name") or "",
             "expected_total": jd_total,
             "expected_date": judge.get("transaction_date") or "",
-            "expected_tax": round(float(judge.get("tax_amount") or 0), 2),
+            "expected_tax": round(_safe_num(judge.get("tax_amount")), 2),
             "db_total": db_total,
             "db_merchant": r.get("merchant_name") or "",
             "agreement": "yes" if match else "no",
