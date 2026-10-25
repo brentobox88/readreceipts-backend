@@ -70,3 +70,25 @@ When tsc / pytest / docker / git show errors that don't match the source:
   (`tsc --listFiles`, `git show HEAD:file`, `docker inspect --format '{{.Config.Image}}'`)
 - Search for duplicate files with `Get-ChildItem -Filter "filename" -Recurse`
 - Verify the tool's working directory / config matches the file you edited
+
+## Session 2026-10-25: line items, worker v7, mobile edit flow
+
+What shipped:
+- Qwen worker v7 prompt (line items + date year accuracy)
+- 15 recoverable receipts reprocessed with real itemized breakdown
+- Mobile ReceiptDetailScreen renders line-item objects
+- Mobile ConfirmationScreen modal dismiss (no more nav error)
+- Deleted stale root-level ConfirmationScreen.tsx (tsc was reading it)
+- Eval baseline: merchant 88.9% / total 100% / date 88.9% / tax 100%
+- Baseline committed: evaluation/baseline_2026-10-25.json
+
+What broke (and got fixed):
+- CSV BOM from PowerShell Export-Csv
+- Qwen v7 Docker image didn't deploy for hours (build cache)
+- Phantom TypeScript errors from stale duplicate file
+
+What's still on the backlog:
+- EAS build + TestFlight
+- Worker cron pattern (Render free-tier reliability)
+- qwen-v8 prompt (26->23 year misread)
+- Merchant fuzzy matching
