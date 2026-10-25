@@ -51,3 +51,22 @@ producing headers like `'\ufeff\"image_file\"'` — doubly broken.
     )
 
 This bit us 4 times in one session. Don't let it bit you again.
+
+## Ghost errors = wrong file
+
+The tell: **an error message stays byte-identical after every fix you make.**
+That's not "the fix is wrong" — it's "the tool is reading a different file."
+
+Fifth occurrence in one session:
+1. `.env.backup` committed to git instead of excluded
+2. `handler.py` v7 edits not in the Docker build (cache)
+3. `tasks.py` confidence fix never made it into a commit
+4. `test_set.csv` BOM added by PowerShell's Export-Csv
+5. `ConfirmationScreen.tsx` — tsc reading a stale root-level copy while
+   edits went into `src/screens/ConfirmationScreen.tsx`
+
+When tsc / pytest / docker / git show errors that don't match the source:
+- Run the tool with a "list what I'm actually reading" flag
+  (`tsc --listFiles`, `git show HEAD:file`, `docker inspect --format '{{.Config.Image}}'`)
+- Search for duplicate files with `Get-ChildItem -Filter "filename" -Recurse`
+- Verify the tool's working directory / config matches the file you edited
