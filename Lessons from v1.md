@@ -32,3 +32,22 @@ When an image fails to decode, check the first 3 bytes:
   89 50 4E → PNG
   00 00 00 xx 66 74 79 70 → HEIC
 Telling you what the format actually is.
+## PowerShell 5.1 writes UTF-8 BOM by default
+
+`Set-Content -Encoding UTF8` and `Export-Csv -Encoding UTF8` write a UTF-8 BOM
+(EF BB BF). Python's `csv.DictReader(f.open(encoding='utf-8'))` does NOT strip
+the BOM, so the first column name becomes `'\ufeffimage_file'` and any
+`row['image_file']` lookup raises KeyError.
+
+Additionally, `Export-Csv` may re-quote headers when it detects the BOM,
+producing headers like `'\ufeff\"image_file\"'` � doubly broken.
+
+**Always** write files Python reads with:
+
+    [System.IO.File]::WriteAllText(
+        \,
+        \,
+        (New-Object System.Text.UTF8Encoding \False)  # <- no BOM
+    )
+
+This bit us 4 times in one session. Don't let it bit you again.
