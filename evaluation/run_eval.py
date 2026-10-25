@@ -129,9 +129,10 @@ def run():
         # date: exact after normalization
         exp_d = normalize_date(row.get("expected_date"))
         got_d = normalize_date(got_date)
-        results["date"].total += 1
-        if exp_d and got_d and exp_d == got_d:
-            results["date"].correct += 1
+        if exp_d is not None:
+            results["date"].total += 1
+            if got_d and exp_d == got_d:
+                results["date"].correct += 1
 
     print(f"\n{'Field':<12}{'Correct':<10}{'Total':<10}{'Accuracy':<10}")
     print("-" * 42)
