@@ -92,3 +92,23 @@ What's still on the backlog:
 - Worker cron pattern (Render free-tier reliability)
 - qwen-v8 prompt (26->23 year misread)
 - Merchant fuzzy matching
+
+## UX Audit Session (2026-10-28)
+
+What changed:
+- 7 tabs -> 5 tabs (Apple HIG max is 5; more = unusable on small screens)
+- Fake Profile placeholder data -> real Firebase user + live receipt stats
+- 3 receipt detail flows -> 1 consistent ReceiptDetailScreen
+- Deleted 4 dead-code files (~500 lines)
+- 14 tsc errors -> 0
+
+Why it mattered:
+- A user who installs the app and sees 'John Doe' assumes it's a demo, not a product
+- Tapping a receipt from different screens leading to different UIs breaks the mental model
+- Dead code with type errors slows every future fix
+
+The pattern:
+- Open all screens side by side and audit the user journey, not the code
+- Fix the highest-severity item first, verify on device, commit, repeat
+- When VS Code and npx tsc disagree, trust npx tsc (stale editor cache)
+- When a test passes in dev but you're not sure about production, run a TestFlight build
