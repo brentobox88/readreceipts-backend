@@ -22,7 +22,6 @@ from app.database import get_db, engine, Base
 from app.models.batch import Batch, BatchStatus
 from app.models.receipt import Receipt
 from app.services.task_queue import TaskQueueService
-from imagetotable_client import ImageToTableClient
 
 PROJECT_ID = os.getenv("PROJECT_ID", "receipt-relief")
 PROCESSOR_ID = os.getenv("PROCESSOR_ID", "896553633cd26552")
