@@ -46,3 +46,54 @@ test_*.jpg
 
 # Allow eval baseline JSON snapshots (last_run.json stays ignored)
 !evaluation/baseline_*.json
+
+# Legacy backups and duplicates
+*.bak
+*.bak-*
+*.backup
+*.backup_*
+_backup_*
+.backup_files/
+ReadReceiptsZeroTouch/
+
+# Test scripts and artifacts
+test_*.py
+test_*.jpg
+test.*
+minimal_test.py
+qwen_*.json
+temp_*.txt
+backend_log.txt
+debug.log
+
+# Customer receipt uploads (contain user data)
+uploads/
+
+# Old migration scripts
+add_columns.py
+add_notes_column.py
+list_tables.py
+create_table.py
+migrate_add_batch.py
+
+# Legacy root-level scripts
+simple.py
+simple_backend.py
+main_fixed.py
+working_backend.py
+backend_with_confidence.py
+app_document_ai_fixed.py
+document_ai_service.py
+imagetotable_client.py
+extract_receipt.py
+create_sample_receipt.py
+ocr_service_tesseract_backup.py
+ocr_service.py.backup
+
+# Checklists and logs
+checklist_*.txt
+
+# Local media and generated videos
+*.mp4
+*.mov
+media/
