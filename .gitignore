@@ -1,4 +1,4 @@
-﻿# Secrets and credentials
+ Secrets and credentials
 *.json
 service-account-key.json
 serviceAccountKey.json
