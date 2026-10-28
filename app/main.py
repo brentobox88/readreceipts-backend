@@ -25,15 +25,6 @@ from app.services.task_queue import TaskQueueService
 
 PROJECT_ID = os.getenv("PROJECT_ID", "receipt-relief")
 PROCESSOR_ID = os.getenv("PROCESSOR_ID", "896553633cd26552")
-IMAGETOTABLE_API_KEY = os.getenv("IMAGETOTABLE_API_KEY")
-
-if IMAGETOTABLE_API_KEY:
-    imagetotable_client = ImageToTableClient(IMAGETOTABLE_API_KEY)
-    print("? ImageToTable.ai client initialized")
-else:
-    print("?? IMAGETOTABLE_API_KEY not set")
-    imagetotable_client = None
-
 Base.metadata.create_all(bind=engine)
 
 # Run migrations for existing tables
@@ -587,55 +578,6 @@ async def get_batch_receipts(batch_id: str, db: Session = Depends(get_db)):
         ]
     })
 
-@app.post("/upload")
-async def upload_receipt(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not imagetotable_client:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "ImageToTable.ai client not configured"}
-        )
-    try:
-        content = await file.read()
-        import tempfile
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-        try:
-            results = imagetotable_client.upload_and_process(tmp_path)
-        finally:
-            os.unlink(tmp_path)
-        documents = results.get("documents", [])
-        if not documents:
-            return JSONResponse(status_code=400, content={"error": "No data extracted"})
-        doc = documents[0]
-        receipt_id = str(uuid.uuid4())
-        current_time = datetime.now()
-        receipt = Receipt(
-            id=receipt_id,
-            merchant_name=doc.get("merchant", "Unknown"),
-            transaction_date=doc.get("date", ""),
-            subtotal=doc.get("subtotal", 0),
-            tax_amount=doc.get("tax", 0),
-            total_amount=doc.get("total", 0),
-            line_items=json.dumps(doc.get("line_items", [])),
-            status="completed",
-            created_at=current_time,
-            processed_at=current_time
-        )
-        db.add(receipt)
-        db.commit()
-        return JSONResponse(content={
-            "success": True,
-            "receipt_id": receipt_id,
-            "data": doc
-        })
-    except Exception as e:
-        db.rollback()
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-@app.get("/export")
 async def export_receipts(
     start_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
