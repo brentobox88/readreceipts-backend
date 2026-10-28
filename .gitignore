@@ -1,4 +1,4 @@
- Secrets and credentials
+Secrets and credentials
 *.json
 service-account-key.json
 serviceAccountKey.json
@@ -97,3 +97,49 @@ checklist_*.txt
 *.mp4
 *.mov
 media/
+
+# --- Secrets
+*serviceAccount*.json
+
+# --- Backups
+*.bak2
+*.backup*
+
+# --- Database
+
+# --- Python
+*.pyo
+
+# --- Nested projects
+
+# --- Uploads (customer data)
+
+# --- Media
+mermaid-diagram-*.png
+
+# --- Test scripts and artifacts
+test_*.txt
+test.html
+test.txt
+test_image.jpg
+test_receipt.jpg
+
+# --- Legacy entrypoints and one-off scripts
+main.py
+app_document_ai_fixed.backup.py
+app_document_ai_fixed_backup_*.py
+ocr_service*.backup
+
+# --- Migration and one-off scripts
+batch_upload.ps1
+monthly_report.ps1
+start.bat
+start.ps1
+start_server.bat
+write_main.ps1
+query
+
+# --- Checklists and exports
+receipts_export.csv
+receipts_standard.csv
+receipts_with_confidence.csv
